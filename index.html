@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>锤子剪刀布生存战</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="arena" aria-label="游戏主界面">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Rock Paper Scissors Tactics</p>
+            <h1>锤子剪刀布生存战</h1>
+          </div>
+          <button class="icon-button" id="resetBtn" type="button" title="重新开始" aria-label="重新开始">
+            ↻
+          </button>
+        </header>
+
+
+        <details class="online-panel">
+          <summary>
+            <span>联机模式</span>
+            <strong id="onlineStatus">单机：对战电脑</strong>
+          </summary>
+          <div class="online-grid">
+            <div class="online-actions">
+              <button class="online-button" id="hostBtn" type="button">创建房间</button>
+              <button class="online-button" id="joinBtn" type="button">加入房间</button>
+              <button class="online-button" id="applyCodeBtn" type="button">复制房间码</button>
+              <button class="online-button" id="offlineBtn" type="button">回到单机</button>
+            </div>
+            <label class="online-field">
+              <span>我的房间码</span>
+              <textarea id="localCode" readonly placeholder="房主创建后这里会显示 4 位房间码"></textarea>
+            </label>
+            <label class="online-field">
+              <span>输入房间码</span>
+              <textarea id="remoteCode" placeholder="加入者输入房主给的 4 位房间码"></textarea>
+            </label>
+          </div>
+        </details>
+        <section class="fighters" aria-label="双方状态">
+          <article class="fighter player-card" id="playerCard">
+            <div class="fighter-head">
+              <div>
+                <p class="label">玩家</p>
+                <h2>你</h2>
+              </div>
+              <span class="status-badge" id="playerState">睡觉中</span>
+            </div>
+            <div class="avatar">你</div>
+            <dl class="stats">
+              <div>
+                <dt>位置</dt>
+                <dd id="playerLocation">玩家家里</dd>
+              </div>
+              <div>
+                <dt>生命</dt>
+                <dd id="playerHp">3 / 3</dd>
+              </div>
+              <div>
+                <dt>技能</dt>
+                <dd id="playerSkill">未解锁</dd>
+              </div>
+            </dl>
+          </article>
+
+          <div class="duel-panel">
+            <div class="round-result" id="roundResult">选择出拳，争夺行动权</div>
+            <div class="throws" aria-label="锤子剪刀布选择">
+              <button class="throw-button" type="button" data-throw="rock">
+                <span>锤子</span>
+                <strong>✊</strong>
+              </button>
+              <button class="throw-button" type="button" data-throw="scissors">
+                <span>剪刀</span>
+                <strong>✌</strong>
+              </button>
+              <button class="throw-button" type="button" data-throw="paper">
+                <span>布</span>
+                <strong>✋</strong>
+              </button>
+            </div>
+            <div class="choice-line">
+              <span id="playerThrow">你：未出拳</span>
+              <span id="computerThrow">电脑：未出拳</span>
+            </div>
+          </div>
+
+          <article class="fighter computer-card" id="computerCard">
+            <div class="fighter-head">
+              <div>
+                <p class="label">电脑</p>
+                <h2>对手</h2>
+              </div>
+              <span class="status-badge" id="computerState">睡觉中</span>
+            </div>
+            <div class="avatar">敌</div>
+            <dl class="stats">
+              <div>
+                <dt>位置</dt>
+                <dd id="computerLocation">电脑家里</dd>
+              </div>
+              <div>
+                <dt>生命</dt>
+                <dd id="computerHp">3 / 3</dd>
+              </div>
+              <div>
+                <dt>技能</dt>
+                <dd id="computerSkill">未解锁</dd>
+              </div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="map-section" aria-label="地图">
+          <div class="section-title">
+            <h2>地图</h2>
+            <p id="turnHint">赢下猜拳后才能行动</p>
+          </div>
+          <div class="map-grid" id="mapGrid"></div>
+        </section>
+
+        <section class="actions-section" aria-label="行动">
+          <div class="section-title">
+            <h2>行动</h2>
+            <p id="actionHint">当前没有行动权</p>
+          </div>
+          <div class="actions" id="actions"></div>
+        </section>
+      </section>
+
+      <aside class="log-panel" aria-label="战况记录">
+        <div class="section-title">
+          <h2>战况</h2>
+          <p>每回合由猜拳决定谁能行动</p>
+        </div>
+        <ol class="log-list" id="logList"></ol>
+      </aside>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>

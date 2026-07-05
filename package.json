@@ -1,0 +1,14 @@
+{
+  "name": "rps-survival-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "锤子剪刀布生存战在线房间版",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --check game.js && node --check server.js && node smoke-test.js && node combat-test.js && node movement-test.js && node vehicle-test.js && node ai-test.js && node online-perspective-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
