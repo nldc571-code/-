@@ -1,4 +1,4 @@
-const throws = {
+﻿const throws = {
   rock: { name: "锤子", icon: "✊", beats: "scissors" },
   scissors: { name: "剪刀", icon: "✌", beats: "paper" },
   paper: { name: "布", icon: "✋", beats: "rock" },
@@ -632,6 +632,7 @@ function handleNetworkMessage(message) {
   }
 
   if (message.type === "state") {
+    pendingThrows = {};
     state = message.state;
     render();
     return;
@@ -641,10 +642,8 @@ function handleNetworkMessage(message) {
 
   if (message.type === "throw") {
     pendingThrows[message.actorId] = message.choice;
-    setThrowForActor(message.actorId, message.choice);
-    state.message = "等待双方出拳";
+    state.message = pendingThrows[localActorId] ? "双方已出拳，正在判定" : "对方已出拳，等待你出拳";
     tryResolveOnlineDuel();
-    syncStateToGuest();
     render();
     return;
   }
@@ -665,7 +664,7 @@ function handleNetworkMessage(message) {
 
 function handleOnlineThrow(choice) {
   if (state.phase !== "duel" || state.gameOver) return;
-  setThrowForActor(localActorId, choice);
+  pendingThrows[localActorId] = choice;
 
   if (!isHost) {
     state.message = "已出拳，等待房主判定";
@@ -674,10 +673,8 @@ function handleOnlineThrow(choice) {
     return;
   }
 
-  pendingThrows[localActorId] = choice;
   state.message = "等待对方出拳";
   tryResolveOnlineDuel();
-  syncStateToGuest();
   render();
 }
 
@@ -714,6 +711,7 @@ function tryResolveOnlineDuel() {
   addLog(
     `第 ${state.round} 回合：房主出${throws[playerChoice].name}，加入者出${throws[computerChoice].name}，${winnerName}获得行动权。`,
   );
+  syncStateToGuest();
 }
 function chooseComputerAction() {
   const actor = state.actors.computer;
@@ -885,8 +883,10 @@ function localSideIds() {
 
 function sideThrowText(actorId, leftSide) {
   const choice = actorId === "player" ? state.playerThrow : state.computerThrow;
+  const pendingChoice = gameMode === "online" && state.phase === "duel" ? pendingThrows[actorId] : null;
   const label = leftSide ? "你" : gameMode === "online" ? "对方" : "电脑";
-  return choice ? `${label}：${throws[choice].name}` : `${label}：未出拳`;
+  if (choice) return `${label}：${throws[choice].name}`;
+  return pendingChoice ? `${label}：已出拳` : `${label}：未出拳`;
 }
 
 function actingName(actorId) {
@@ -1097,7 +1097,8 @@ function render() {
 
   els.throwButtons.forEach((button) => {
     const choice = button.dataset.throw;
-    const localThrow = localActorId === "player" ? state.playerThrow : state.computerThrow;
+    const revealedLocalThrow = localActorId === "player" ? state.playerThrow : state.computerThrow;
+    const localThrow = pendingThrows[localActorId] || revealedLocalThrow;
     button.classList.toggle("selected", localThrow === choice);
     button.disabled = state.phase !== "duel" || state.gameOver;
   });
