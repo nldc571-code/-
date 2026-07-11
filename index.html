@@ -4,25 +4,166 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>锤子剪刀布生存战</title>
+    <meta name="theme-color" content="#101216" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="assets/app-icon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="game-shell">
+    <section class="screen start-screen" id="startScreen" aria-label="开始界面">
+      <div class="hero-copy">
+        <p class="eyebrow">Rock Paper Scissors Survival</p>
+        <h1>锤子剪刀布生存战</h1>
+        <p class="hero-text">赢下猜拳，抢到行动权；起床、拿装备、开载具，最后活下来。</p>
+        <button class="primary-button" id="startGameBtn" type="button">开始游戏</button>
+      </div>
+      <div class="animated-poster" aria-hidden="true">
+        <div class="poster-orbit orbit-one">✊</div>
+        <div class="poster-orbit orbit-two">✌</div>
+        <div class="poster-orbit orbit-three">✋</div>
+        <div class="poster-stage">
+          <span class="fighter-mark fighter-a">你</span>
+          <span class="impact-mark">VS</span>
+          <span class="fighter-mark fighter-b">敌</span>
+        </div>
+        <div class="poster-ground"></div>
+      </div>
+    </section>
+
+    <section class="screen mode-screen hidden" id="modeScreen" aria-label="模式选择">
+      <header class="screen-head">
+        <div>
+          <p class="eyebrow">选择模式</p>
+          <h1>进入哪种战场</h1>
+        </div>
+        <button class="ghost-button" id="modeBackBtn" type="button">返回</button>
+      </header>      <details class="mode-switcher" open>
+        <summary><span>战场模式</span><strong id="modeCurrent">展开选择模式</strong></summary>
+        <div class="mode-switch-list">
+          <button class="mode-option" id="singleModeBtn" type="button"><span class="mode-icon">☉</span><span><strong>单人模式</strong><small>完整装备、载具与狙击规则</small></span></button>
+          <button class="mode-option" id="teamModeBtn" type="button"><span class="mode-icon">▦</span><span><strong>阵营模式</strong><small>3v3 房间，与队友协作生存</small></span></button>
+        </div>
+      </details>
+    </section>
+
+    <section class="screen character-screen hidden" id="characterScreen" aria-label="角色选择">
+      <header class="screen-head">
+        <div>
+          <p class="eyebrow" id="characterModeLabel">战术档案</p>
+          <h1 id="characterTitle">选择你的角色</h1>
+        </div>
+        <button class="ghost-button" id="characterBackBtn" type="button">返回模式</button>
+      </header>
+      <section class="character-stage">
+        <div class="character-intro">
+          <p class="eyebrow">角色能力</p>
+          <h2>每个角色都能改变一回合。</h2>
+          <p id="characterHint">选择一名角色后再进入战场。</p>
+          <div class="character-legend">
+            <span>常驻能力</span><span>一次主动技能</span>
+          </div>
+        </div>
+        <div class="character-grid character-showcase">
+          <button class="character-card scout selected" type="button" data-character="scout">
+            <img src="assets/characters/scout.png" alt="侦察兵角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">◎ 侦察兵</span><strong>全图疾行</strong><small>常驻：行动时可直接前往任意地图节点。</small><em>路线优势</em></span>
+          </button>
+          <button class="character-card vanguard" type="button" data-character="vanguard">
+            <img src="assets/characters/vanguard.png" alt="先锋角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">◆ 先锋</span><strong>强袭</strong><small>生命上限 4；主动：同地点造成 2 点伤害。</small><em>一次爆发</em></span>
+          </button>
+          <button class="character-card medic" type="button" data-character="medic">
+            <img src="assets/characters/medic.png" alt="女性医疗兵角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">+ 医疗兵</span><strong>战地急救</strong><small>主动：为同地点队友恢复 2 点生命。</small><em>一次救援</em></span>
+          </button>
+        </div>
+      </section>
+      <footer class="character-footer">
+        <p id="characterSelected">已选择：侦察兵</p>
+        <button class="primary-button" id="characterStartBtn" type="button">确认角色并进入</button>
+      </footer>
+    </section>
+
+    <section class="room-shell hidden" id="roomShell" aria-label="多人房间">
+      <header class="room-head">
+        <div>
+          <p class="eyebrow" id="roomModeLabel">多人房间</p>
+          <h1 id="roomTitle">房间大厅</h1>
+        </div>
+        <div class="room-head-actions">
+          <button class="ghost-button" id="roomBackBtn" type="button">模式选择</button>
+          <button class="ghost-button" id="roomToHomeBtn" type="button">主界面</button>
+        </div>
+      </header>
+
+      <section class="room-panel lobby-only">
+        <div class="room-controls">
+          <button class="online-button" id="roomJoinBtn" type="button">加入房间</button>
+          <button class="online-button" id="roomCopyBtn" type="button">复制房间码</button>
+          <button class="online-button" id="roomAddBotBtn" type="button">加入人机</button>
+          <button class="primary-button compact" id="roomStartBtn" type="button">开始房间</button>
+        </div>
+        <label class="online-field">
+          <span>我的房间码</span>
+          <textarea id="roomLocalCode" readonly placeholder="创建房间后显示 4 位房间码"></textarea>
+        </label>
+        <label class="online-field">
+          <span>输入房间码</span>
+          <textarea id="roomRemoteCode" placeholder="输入房主给你的房间码"></textarea>
+        </label>
+        <p class="room-status" id="roomStatus">先创建房间，或输入房间码加入。</p>
+      </section>
+
+      <section class="room-battle-panel hidden" id="roomBattlePanel">
+        <div class="section-title">
+          <h2>多人战斗</h2>
+          <p id="roomBattleStatus">等待房主开始房间</p><div class="battle-metrics" id="roomMetrics"></div>
+        </div>
+        <section class="self-status-panel" id="roomSelfStatus" aria-label="我的状态"></section>
+        <section class="battle-map-panel">
+          <div class="section-title compact-title">
+            <h2>战斗地图</h2>
+            <p id="roomMapHint">阵营出生点围绕军火库和载具点展开。</p>
+          </div>
+          <div class="battle-map-layout" id="roomMap"></div>
+          <div class="battle-map-links" id="roomMapLinks"></div>
+        </section>
+        <div class="room-throws" id="roomThrowButtons"></div>
+        <div class="room-actions" id="roomActionButtons"></div>
+        <ol class="room-battle-log" id="roomBattleLog"></ol>
+      </section>
+
+      <section class="slots-panel">
+        <div class="section-title">
+          <h2>玩家槽位</h2>
+          <p id="roomHint">阵营模式最多 6 人，乱战模式最多 5 人。</p>
+        </div>
+        <div class="slot-grid" id="roomSlots"></div>
+      </section>
+    </section>
+
+    <main class="game-shell hidden" id="gameShell">
       <section class="arena" aria-label="游戏主界面">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Rock Paper Scissors Tactics</p>
-            <h1>锤子剪刀布生存战</h1>
+            <p class="eyebrow">Single Player</p>
+            <h1>单人模式</h1>
           </div>
-          <button class="icon-button" id="resetBtn" type="button" title="重新开始" aria-label="重新开始">
-            ↻
-          </button>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="gameModeBtn" type="button">模式选择</button>
+            <button class="icon-button" id="resetBtn" type="button" title="重新开始" aria-label="重新开始">↻</button>
+          </div>
         </header>
 
-
-        <details class="online-panel">
+        <details class="online-panel single-only">
           <summary>
-            <span>联机模式</span>
+            <span>双人旧版联机</span>
             <strong id="onlineStatus">单机：对战电脑</strong>
           </summary>
           <div class="online-grid">
@@ -42,6 +183,7 @@
             </label>
           </div>
         </details>
+
         <section class="fighters" aria-label="双方状态">
           <article class="fighter player-card" id="playerCard">
             <div class="fighter-head">
@@ -53,36 +195,18 @@
             </div>
             <div class="avatar">你</div>
             <dl class="stats">
-              <div>
-                <dt>位置</dt>
-                <dd id="playerLocation">玩家家里</dd>
-              </div>
-              <div>
-                <dt>生命</dt>
-                <dd id="playerHp">3 / 3</dd>
-              </div>
-              <div>
-                <dt>技能</dt>
-                <dd id="playerSkill">未解锁</dd>
-              </div>
+              <div><dt>位置</dt><dd id="playerLocation">玩家家里</dd></div>
+              <div><dt>生命</dt><dd id="playerHp">3 / 3</dd></div>
+              <div><dt>状态</dt><dd id="playerSkill">未解锁</dd></div>
             </dl>
           </article>
 
           <div class="duel-panel">
             <div class="round-result" id="roundResult">选择出拳，争夺行动权</div>
             <div class="throws" aria-label="锤子剪刀布选择">
-              <button class="throw-button" type="button" data-throw="rock">
-                <span>锤子</span>
-                <strong>✊</strong>
-              </button>
-              <button class="throw-button" type="button" data-throw="scissors">
-                <span>剪刀</span>
-                <strong>✌</strong>
-              </button>
-              <button class="throw-button" type="button" data-throw="paper">
-                <span>布</span>
-                <strong>✋</strong>
-              </button>
+              <button class="throw-button" type="button" data-throw="rock"><span>锤子</span><strong>✊</strong></button>
+              <button class="throw-button" type="button" data-throw="scissors"><span>剪刀</span><strong>✌</strong></button>
+              <button class="throw-button" type="button" data-throw="paper"><span>布</span><strong>✋</strong></button>
             </div>
             <div class="choice-line">
               <span id="playerThrow">你：未出拳</span>
@@ -100,18 +224,9 @@
             </div>
             <div class="avatar">敌</div>
             <dl class="stats">
-              <div>
-                <dt>位置</dt>
-                <dd id="computerLocation">电脑家里</dd>
-              </div>
-              <div>
-                <dt>生命</dt>
-                <dd id="computerHp">3 / 3</dd>
-              </div>
-              <div>
-                <dt>技能</dt>
-                <dd id="computerSkill">未解锁</dd>
-              </div>
+              <div><dt>位置</dt><dd id="computerLocation">电脑家里</dd></div>
+              <div><dt>生命</dt><dd id="computerHp">3 / 3</dd></div>
+              <div><dt>状态</dt><dd id="computerSkill">未解锁</dd></div>
             </dl>
           </article>
         </section>
@@ -142,6 +257,7 @@
       </aside>
     </main>
 
+    <div class="feedback-layer" id="feedbackLayer" aria-live="polite"></div>
     <script src="game.js"></script>
   </body>
 </html>

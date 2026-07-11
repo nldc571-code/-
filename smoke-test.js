@@ -91,7 +91,7 @@ if (!elements["#roundResult"].textContent) {
   throw new Error("回合结果没有渲染。");
 }
 
-if (!elements["#playerHp"].textContent.includes("3")) {
+if (!elements["#playerHp"].innerHTML.includes("health-bar") || !elements["#playerHp"].innerHTML.includes("3/3")) {
   throw new Error("玩家生命没有渲染。");
 }
 

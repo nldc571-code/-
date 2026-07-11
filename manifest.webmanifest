@@ -1,0 +1,17 @@
+{
+  "name": "\u9524\u5b50\u526a\u5200\u5e03\u751f\u5b58\u6218",
+  "short_name": "\u731c\u62f3\u751f\u5b58\u6218",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101216",
+  "theme_color": "#101216",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

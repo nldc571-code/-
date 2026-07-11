@@ -8,12 +8,18 @@ const root = __dirname;
 const port = Number(process.env.PORT || 8787);
 const rooms = new Map();
 const clients = new Map();
+const characterIds = ["scout", "vanguard", "medic"];
+
+function characterFor(value) {
+  return characterIds.includes(value) ? value : "scout";
+}
 
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function sendFile(res, urlPath) {
@@ -44,11 +50,33 @@ function makeCode() {
   return code;
 }
 
+function roomCapacity(mode) {
+  if (mode === "team") return 6;
+  if (mode === "chaos") return 5;
+  return 2;
+}
+
+function publicRoom(room) {
+  return {
+    code: room.code,
+    mode: room.mode,
+    maxPlayers: room.maxPlayers,
+    started: room.started,
+    players: room.players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      role: player.role,
+      team: player.team,
+      bot: Boolean(player.bot),
+      character: player.character || "scout",
+      connected: !player.bot && !player.socket.destroyed,
+    })),
+  };
+}
+
 function encodeFrame(text) {
   const payload = Buffer.from(text);
-  if (payload.length < 126) {
-    return Buffer.concat([Buffer.from([0x81, payload.length]), payload]);
-  }
+  if (payload.length < 126) return Buffer.concat([Buffer.from([0x81, payload.length]), payload]);
   if (payload.length < 65536) {
     const header = Buffer.alloc(4);
     header[0] = 0x81;
@@ -84,9 +112,7 @@ function decodeFrame(buffer) {
   const payload = buffer.subarray(offset, offset + length);
   if (!masked) return payload.toString("utf8");
   const unmasked = Buffer.alloc(payload.length);
-  for (let i = 0; i < payload.length; i += 1) {
-    unmasked[i] = payload[i] ^ mask[i % 4];
-  }
+  for (let i = 0; i < payload.length; i += 1) unmasked[i] = payload[i] ^ mask[i % 4];
   return unmasked.toString("utf8");
 }
 
@@ -94,17 +120,48 @@ function sendJson(socket, data) {
   if (!socket.destroyed) socket.write(encodeFrame(JSON.stringify(data)));
 }
 
-function otherClient(socket) {
+function broadcastRoom(room, message, exceptSocket = null) {
+  room.players.forEach((player) => {
+    if (!player.bot && player.socket !== exceptSocket) sendJson(player.socket, message);
+  });
+}
+
+function broadcastLobby(room) {
+  broadcastRoom(room, { type: "roomUpdate", room: publicRoom(room) });
+}
+
+function clientRoom(socket) {
   const info = clients.get(socket);
-  if (!info) return null;
-  const room = rooms.get(info.code);
-  if (!room) return null;
-  return info.role === "host" ? room.guest : room.host;
+  return info ? rooms.get(info.code) : null;
 }
 
 function relay(socket, message) {
-  const other = otherClient(socket);
-  if (other) sendJson(other, message);
+  const room = clientRoom(socket);
+  if (!room) return;
+  broadcastRoom(room, message, socket);
+}
+
+function nextTeam(room) {
+  if (room.mode !== "team") return null;
+  const red = room.players.filter((player) => player.team === "A").length;
+  const blue = room.players.filter((player) => player.team === "B").length;
+  return red <= blue ? "A" : "B";
+}
+
+function addPlayer(room, socket, role, bot = false, character = "scout") {
+  const index = room.players.length + 1;
+  const player = {
+    id: bot ? `bot-${Date.now()}-${index}` : crypto.randomUUID(),
+    socket,
+    role,
+    bot,
+    character: bot ? characterIds[(index - 1) % characterIds.length] : characterFor(character),
+    name: bot ? `人机 ${index}` : role === "host" ? "房主" : `玩家 ${index}`,
+    team: nextTeam(room),
+  };
+  room.players.push(player);
+  if (!bot) clients.set(socket, { code: room.code, role, playerId: player.id });
+  return player;
 }
 
 function removeClient(socket) {
@@ -112,39 +169,101 @@ function removeClient(socket) {
   if (!info) return;
   const room = rooms.get(info.code);
   if (room) {
-    if (room.host === socket) room.host = null;
-    if (room.guest === socket) room.guest = null;
-    const other = room.host || room.guest;
-    if (other) sendJson(other, { type: "error", message: "对方已断开" });
-    if (!room.host && !room.guest) rooms.delete(info.code);
+    room.players = room.players.filter((player) => player.bot || player.socket !== socket);
+    const hostGone = info.role === "host";
+    const firstHuman = room.players.find((player) => !player.bot);
+    if (hostGone && firstHuman) {
+      firstHuman.role = "host";
+      firstHuman.name = "房主";
+      const firstInfo = clients.get(firstHuman.socket);
+      if (firstInfo) firstInfo.role = "host";
+      sendJson(firstHuman.socket, { type: "hostChanged" });
+    }
+    if (room.players.some((player) => !player.bot)) {
+      broadcastRoom(room, { type: "error", message: "有玩家断开了连接" }, socket);
+      broadcastLobby(room);
+    } else {
+      rooms.delete(info.code);
+    }
   }
   clients.delete(socket);
 }
 
 function handleMessage(socket, message) {
   if (message.type === "createRoom") {
+    const mode = ["duel", "team", "chaos"].includes(message.mode) ? message.mode : "duel";
     const code = makeCode();
-    rooms.set(code, { host: socket, guest: null });
-    clients.set(socket, { code, role: "host" });
-    sendJson(socket, { type: "roomCreated", code });
+    const room = { code, mode, maxPlayers: roomCapacity(mode), players: [], started: false };
+    rooms.set(code, room);
+    addPlayer(room, socket, "host", false, message.character);
+    sendJson(socket, { type: "roomCreated", code, mode, playerId: clients.get(socket).playerId, room: publicRoom(room) });
+    broadcastLobby(room);
     return;
   }
 
   if (message.type === "joinRoom") {
     const code = String(message.code || "").trim().toUpperCase();
     const room = rooms.get(code);
-    if (!room || !room.host) {
+    if (!room) {
       sendJson(socket, { type: "error", message: "房间不存在" });
       return;
     }
-    if (room.guest && room.guest !== socket) {
+    if (room.started) {
+      sendJson(socket, { type: "error", message: "房间已经开始" });
+      return;
+    }
+    if (room.players.length >= room.maxPlayers) {
       sendJson(socket, { type: "error", message: "房间已满" });
       return;
     }
-    room.guest = socket;
-    clients.set(socket, { code, role: "guest" });
-    sendJson(room.host, { type: "joined", code });
-    sendJson(socket, { type: "joined", code });
+    const player = addPlayer(room, socket, "guest", false, message.character);
+    sendJson(socket, { type: "joined", code, mode: room.mode, playerId: player.id, room: publicRoom(room) });
+    broadcastRoom(room, { type: "joined", code, mode: room.mode, room: publicRoom(room) }, socket);
+    broadcastLobby(room);
+    return;
+  }
+
+  if (message.type === "addBot") {
+    const room = clientRoom(socket);
+    const info = clients.get(socket);
+    if (!room || info.role !== "host") return;
+    if (room.players.length >= room.maxPlayers) {
+      sendJson(socket, { type: "error", message: "房间已满，不能再加人机" });
+      return;
+    }
+    addPlayer(room, null, "bot", true);
+    broadcastLobby(room);
+    return;
+  }
+
+  if (message.type === "removeBot") {
+    const room = clientRoom(socket);
+    const info = clients.get(socket);
+    if (!room || info.role !== "host" || room.started) return;
+    const before = room.players.length;
+    room.players = room.players.filter((player) => !(player.bot && player.id === message.playerId));
+    if (room.players.length !== before) broadcastLobby(room);
+    return;
+  }
+
+  if (message.type === "setCharacter") {
+    const room = clientRoom(socket);
+    const info = clients.get(socket);
+    if (!room || !info || room.started) return;
+    const player = room.players.find((entry) => entry.id === info.playerId);
+    if (!player) return;
+    player.character = characterFor(message.character);
+    broadcastLobby(room);
+    return;
+  }
+
+  if (message.type === "startRoom") {
+    const room = clientRoom(socket);
+    const info = clients.get(socket);
+    if (!room || info.role !== "host") return;
+    room.started = true;
+    room.battle = message.battle || null;
+    broadcastRoom(room, { type: "roomStarted", room: publicRoom(room), battle: room.battle });
     return;
   }
 
@@ -162,10 +281,7 @@ server.on("upgrade", (req, socket) => {
     return;
   }
   const key = req.headers["sec-websocket-key"];
-  const accept = crypto
-    .createHash("sha1")
-    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-    .digest("base64");
+  const accept = crypto.createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
       "Upgrade: websocket\r\n" +
