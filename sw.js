@@ -1,4 +1,6 @@
-const CACHE_NAME = "rps-survival-v9";
+// Keep the application shell current. A cache-first response for game.js can
+// leave browsers running an older build whose controls no longer match index.html.
+const CACHE_NAME = "rps-survival-v12";
 const ASSETS = [
   "/",
   "/index.html",
@@ -24,9 +26,22 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) return;
+
+  // Refresh UI files before using the offline copy so new controls always get
+  // their matching event handlers. The cache remains the offline fallback.
+  const appShell = ["/", "/index.html", "/styles.css", "/game.js"].includes(requestUrl.pathname);
+  if (appShell) {
+    event.respondWith(fetch(event.request).then((response) => {
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+      return response;
+    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html"))));
+    return;
+  }
+
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    const copy = response.clone();
-    if (new URL(event.request.url).origin === self.location.origin) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
     return response;
   }).catch(() => caches.match("/index.html"))));
 });

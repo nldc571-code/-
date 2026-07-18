@@ -40,7 +40,7 @@ roomBattle.throws={p1:"rock",p2:"scissors",p3:"paper"};
 resolveRoomDuelIfReady();
 `, context);
 if (vm.runInContext("roomBattle.phase", context) !== "duel") throw new Error("三种拳同时出现时不应进入行动阶段。")
-if (vm.runInContext("roomBattle.round", context) !== 2) throw new Error("三种拳平局后没有进入下一回合。")
+if (vm.runInContext("roomBattle.round", context) !== 1) throw new Error("三种拳平局不应计入正式回合。")
 if (!vm.runInContext("roomBattle.log[0].includes('锤子、剪刀、布同时出现')", context)) throw new Error("三种拳平局原因没有写入日志。")
 
 vm.runInContext(`
@@ -80,7 +80,7 @@ medic.asleep=false; medic.hp=1; medic.inventory.medkit=true;
 roomBattle.phase="action"; roomBattle.currentActorId="p2"; roomBattle.actionQueue=["p2"];
 runRoomAction("p2", {id:"useMedkit", label:"使用医疗包"});
 `, context);
-if (vm.runInContext("getRoomPlayer('p2').hp", context) !== 2) throw new Error("医疗兵使用医疗包没有恢复 2 点生命。")
+if (vm.runInContext("getRoomPlayer('p2').hp", context) !== 3) throw new Error("医疗兵使用医疗包没有恢复 2 点生命。")
 vm.runInContext(`
 roomBattle=createRoomBattle({code:"X778",mode:"team",maxPlayers:3,players:[
   {id:"p1",name:"侦察",role:"host",team:"A",bot:false,character:"scout"},
@@ -130,7 +130,7 @@ aidTarget.hp=1; aidTarget.location="wild"; aidMedic.location="redHome";
 roomBattle.phase="action"; roomBattle.currentActorId="p2"; roomBattle.actionQueue=["p2"];
 runRoomAction("p2", getRoomActions("p2").find((action) => action.id === "medicHeal" && action.targetId === "p1"));
 `, context);
-if (vm.runInContext("getRoomPlayer('p1').hp", context) !== 2) throw new Error("Medic remote heal did not restore one health.");
+if (vm.runInContext("getRoomPlayer('p1').hp", context) !== 3) throw new Error("Medic remote heal did not restore two health.");
 
 vm.runInContext(`
 roomBattle=createRoomBattle({code:"X781",mode:"team",maxPlayers:3,players:[

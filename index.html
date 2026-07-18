@@ -45,6 +45,7 @@
         <div class="mode-switch-list">
           <button class="mode-option" id="singleModeBtn" type="button"><span class="mode-icon">☉</span><span><strong>单人模式</strong><small>完整装备、载具与狙击规则</small></span></button>
           <button class="mode-option" id="teamModeBtn" type="button"><span class="mode-icon">▦</span><span><strong>阵营模式</strong><small>3v3 房间，与队友协作生存</small></span></button>
+          <button class="mode-option boss-mode-option" id="bossModeBtn" type="button"><span class="mode-icon">♛</span><span><strong>BOSS 战</strong><small>1 名真人 BOSS 对抗最多 4 名生存者</small></span></button>
         </div>
       </details>
     </section>
@@ -62,6 +63,7 @@
           <p class="eyebrow">角色能力</p>
           <h2>每个角色都能改变一回合。</h2>
           <p id="characterHint">选择一名角色后再进入战场。</p>
+          <div class="character-preview"><img id="characterPreview" alt="角色预览" /><div><p class="eyebrow">角色档案</p><h2 id="characterName">角色</h2><p id="characterDescription"></p><ul id="characterSkills" class="character-skills"></ul></div></div>
           <div class="character-legend">
             <span>常驻能力</span><span>一次主动技能</span>
           </div>
@@ -82,7 +84,26 @@
             <span class="character-card-shade"></span>
             <span class="character-copy"><span class="character-kicker">+ 医疗兵</span><strong>战地急救</strong><small>主动：为同地点队友恢复 2 点生命。</small><em>一次救援</em></span>
           </button>
-        </div>
+          <button class="character-card engineer" type="button" data-character="engineer">
+            <img src="assets/characters/engineer.png" alt="工兵角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">▣ 工兵</span><strong>应急壁垒</strong><small>被动：开局自带一面可抵挡一次攻击的护盾。</small><em>防护支援</em></span>
+          </button>
+          <button class="character-card overlord boss-only hidden" type="button" data-character="overlord">
+            <img src="assets/characters/overlord.png" alt="霸主 BOSS 角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">♛ BOSS · 霸主</span><strong>暴君横扫</strong><small>被动：生命上限 12；限定：同地点横扫所有生存者。</small><em>唯一名额</em></span>
+          </button>
+          <button class="character-card stalker boss-only hidden" type="button" data-character="stalker">
+            <img src="assets/characters/stalker.png" alt="追猎者 BOSS 角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">◉ BOSS · 追猎者</span><strong>追猎突袭</strong><small>限定：突袭相邻地点的一名生存者并发动攻击。</small><em>机动猎杀</em></span>
+          </button>
+          <button class="character-card magician boss-only hidden" type="button" data-character="magician">
+            <img src="assets/characters/magician.png" alt="魔术师 BOSS 角色形象" />
+            <span class="character-card-shade"></span>
+            <span class="character-copy"><span class="character-kicker">✦ BOSS · 魔术师</span><strong>卡牌魔术</strong><small>4/8 生命、开局 2/5 卡牌；可瞬移、疗愈并改写猜拳结果。</small><em>资源操控</em></span>
+          </button>        </div>
       </section>
       <footer class="character-footer">
         <p id="characterSelected">已选择：侦察兵</p>
@@ -98,6 +119,7 @@
         </div>
         <div class="room-head-actions">
           <button class="ghost-button" id="roomBackBtn" type="button">模式选择</button>
+          <button class="ghost-button hidden" id="battleLogHeaderBtn" type="button" aria-haspopup="dialog" aria-expanded="false">战斗日志</button>
           <button class="ghost-button" id="roomToHomeBtn" type="button">主界面</button>
         </div>
       </header>
@@ -120,12 +142,23 @@
         <p class="room-status" id="roomStatus">先创建房间，或输入房间码加入。</p>
       </section>
 
+      <section class="room-duel-screen hidden" id="roomDuelScreen" aria-live="polite"></section>
+
       <section class="room-battle-panel hidden" id="roomBattlePanel">
         <div class="section-title">
           <h2>多人战斗</h2>
           <p id="roomBattleStatus">等待房主开始房间</p><div class="battle-metrics" id="roomMetrics"></div>
         </div>
         <section class="self-status-panel" id="roomSelfStatus" aria-label="我的状态"></section>
+        <section class="battle-team-status" aria-label="队伍状态">
+          <div class="team-status-side team-status-red"><strong>红队</strong><div class="team-status-list" id="roomTeamA"></div></div>
+          <div class="team-status-vs" aria-hidden="true">VS</div>
+          <div class="team-status-side team-status-blue"><strong>蓝队</strong><div class="team-status-list" id="roomTeamB"></div></div>
+        </section>
+        <aside class="boss-status-panel" id="roomBossPanel" aria-label="角色技能与 BOSS 状态">
+          <div class="room-skills" id="roomSkillButtons" aria-label="角色技能"></div>
+          <div class="boss-status-content" id="roomBossStatus" aria-label="BOSS 状态"></div>
+        </aside>
         <section class="battle-map-panel">
           <div class="section-title compact-title">
             <h2>战斗地图</h2>
@@ -134,11 +167,29 @@
           <div class="battle-map-layout" id="roomMap"></div>
           <div class="battle-map-links" id="roomMapLinks"></div>
         </section>
-        <div class="room-throws" id="roomThrowButtons"></div>
-        <div class="room-actions" id="roomActionButtons"></div>
+        <div class="battle-controls">
+          <div class="room-throws" id="roomThrowButtons"></div>
+          <div class="room-actions" id="roomActionButtons"></div>
+        </div>
+
         <ol class="room-battle-log" id="roomBattleLog"></ol>
+        <section class="room-result-overlay hidden" id="roomResultOverlay" aria-live="assertive">
+          <strong id="roomResultTitle">WIN</strong>
+          <p id="roomResultText"></p>
+          <button class="primary-button" id="roomReturnLobbyBtn" type="button">返回房间</button>
+        </section>
       </section>
 
+      <section class="room-skill-dialog hidden" id="roomSkillDialog" aria-live="polite"></section>
+      <section class="battle-log-dialog hidden" id="battleLogDialog" role="dialog" aria-modal="true" aria-labelledby="battleLogDialogTitle">
+        <div class="battle-log-dialog-card">
+          <header>
+            <div><p class="eyebrow">BATTLE LOG</p><h2 id="battleLogDialogTitle">战斗日志</h2></div>
+            <button class="ghost-button" id="battleLogCloseBtn" type="button">关闭</button>
+          </header>
+          <ol id="battleLogDialogList"></ol>
+        </div>
+      </section>
       <section class="slots-panel">
         <div class="section-title">
           <h2>玩家槽位</h2>

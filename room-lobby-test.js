@@ -84,6 +84,9 @@ for (const word of ["红队房间", "蓝队房间", "军火库", "坦克基地",
   if (!mapText.includes(word)) throw new Error(`阵营地图没有显示 ${word}`);
 }
 
+vm.runInContext(`roomBattle={mode:"boss",phase:"action"};roomSkillMode="magicianHeal";roomSkillTargeting="medic";openModeRoom("chaos");`, context);
+if (vm.runInContext("roomBattle", context) !== null) throw new Error("切换模式后保留了旧战斗状态。");
+if (vm.runInContext("roomSkillMode || roomSkillTargeting", context) !== null) throw new Error("切换模式后保留了旧技能选择状态。");
 vm.runInContext(`openModeRoom("chaos");`, context);
 if (elements["#roomTitle"].textContent !== "五人乱战房间") throw new Error("乱战房间标题错误。")
 if (elements["#roomSlots"].children.length !== 5) throw new Error("乱战模式不是 5 个槽位。")

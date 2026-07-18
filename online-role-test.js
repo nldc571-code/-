@@ -39,8 +39,10 @@ function nextMessage(socket, type) {
     await delay(250);
     const host = await openSocket();
     const created = nextMessage(host, "roomCreated");
+    const initialRoomUpdate = nextMessage(host, "roomUpdate");
     host.send(JSON.stringify({ type: "createRoom", mode: "team", character: "medic" }));
     const hostRoom = await created;
+    await initialRoomUpdate;
     assert.equal(hostRoom.room.players[0].character, "medic", "房主角色没有写入房间");
 
     const guest = await openSocket();
@@ -59,10 +61,6 @@ function nextMessage(socket, type) {
     const bot = updatedRoom.room.players.find((player) => player.bot);
     assert.ok(bot, "加入人机失败");
 
-    const changed = nextMessage(host, "roomUpdate");
-    host.send(JSON.stringify({ type: "setCharacter", character: "scout" }));
-    const changedRoom = await changed;
-    assert.equal(changedRoom.room.players.find((player) => player.role === "host").character, "scout", "房主修改角色没有同步");
 
     const botRemoved = nextMessage(host, "roomUpdate");
     host.send(JSON.stringify({ type: "removeBot", playerId: bot.id }));

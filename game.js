@@ -78,8 +78,22 @@ const characters = {
   scout: { name: "侦察兵", icon: "◎", maxHp: 3 },
   vanguard: { name: "先锋", icon: "◆", maxHp: 4 },
   medic: { name: "医疗兵", icon: "+", maxHp: 3 },
+  engineer: { name: "工兵", icon: "▣", maxHp: 3 },
 };
 
+const bosses = {
+  overlord: { name: "霸主", icon: "♛", maxHp: 12, skills: ["暴君横扫", "威慑怒吼", "霸主体魄"] },
+  stalker: { name: "追猎者", icon: "◉", maxHp: 10, skills: ["追猎突袭", "致命追猎", "猎杀本能"] },
+  magician: { name: "魔术师", icon: "✦", maxHp: 8, skills: ["瞬移", "卡牌疗愈", "改写结果", "魔术终幕"] },
+};
+
+function roleConfig(id) {
+  return bosses[id] || characters[id] || characters.scout;
+}
+
+function roomMapConfig(mode = roomBattle?.mode || roomMode) {
+  return roomMapConfigs[mode === "boss" ? "team" : mode] || roomMapConfigs.team;
+}
 const vehicles = {
   plane: { name: "飞机", base: "airBase", maxHp: 1, damage: 2 },
   tank: { name: "坦克", base: "tankBase", maxHp: 2, damage: 1 },
@@ -149,6 +163,17 @@ let roomPlayerId = null;
 let roomIsHost = false;
 let roomBattle = null;
 let roomSkillTargeting = null;
+let roomSkillMode = null;
+let roomHealAmount = 1;
+let roomMagicianEdits = {};
+let roomMagicianEditStage = "askSelf";
+let roomLogOpen = false;
+let roomDuelChoice = null;
+let roomDuelTimer = null;
+let roomDuelReveal = null;
+let roomDuelRevealTimer = null;
+let roomDuelRevealRound = null;
+let roomActionReportTimer = null;
 let selectedCharacter = "scout";
 let selectedMode = "single";
 
@@ -189,6 +214,10 @@ const els = {
   characterModeLabel: document.querySelector("#characterModeLabel"),
   characterHint: document.querySelector("#characterHint"),
   characterSelected: document.querySelector("#characterSelected"),
+  characterPreview: document.querySelector("#characterPreview"),
+  characterName: document.querySelector("#characterName"),
+  characterDescription: document.querySelector("#characterDescription"),
+  characterSkills: document.querySelector("#characterSkills"),
   characterBackBtn: document.querySelector("#characterBackBtn"),
   characterStartBtn: document.querySelector("#characterStartBtn"),
   gameShell: document.querySelector("#gameShell"),
@@ -198,6 +227,7 @@ const els = {
   modeCurrent: document.querySelector("#modeCurrent"),
   singleModeBtn: document.querySelector("#singleModeBtn"),
   teamModeBtn: document.querySelector("#teamModeBtn"),
+  bossModeBtn: document.querySelector("#bossModeBtn"),
   chaosModeBtn: document.querySelector("#chaosModeBtn"),
   gameModeBtn: document.querySelector("#gameModeBtn"),
   roomBackBtn: document.querySelector("#roomBackBtn"),
@@ -215,12 +245,28 @@ const els = {
   roomMapLinks: document.querySelector("#roomMapLinks"),
   roomMapHint: document.querySelector("#roomMapHint"),
   roomBattlePanel: document.querySelector("#roomBattlePanel"),
+  roomDuelScreen: document.querySelector("#roomDuelScreen"),
   roomBattleStatus: document.querySelector("#roomBattleStatus"),
   roomMetrics: document.querySelector("#roomMetrics"),
   roomSelfStatus: document.querySelector("#roomSelfStatus"),
+  roomTeamA: document.querySelector("#roomTeamA"),
+  roomTeamB: document.querySelector("#roomTeamB"),
+  roomBossStatus: document.querySelector("#roomBossStatus"),
+  roomSkillButtons: document.querySelector("#roomSkillButtons"),
+  roomBossPanel: document.querySelector("#roomBossPanel"),
+  roomSkillDialog: document.querySelector("#roomSkillDialog"),
   roomThrowButtons: document.querySelector("#roomThrowButtons"),
   roomActionButtons: document.querySelector("#roomActionButtons"),
   roomBattleLog: document.querySelector("#roomBattleLog"),
+  roomResultOverlay: document.querySelector("#roomResultOverlay"),
+  roomResultTitle: document.querySelector("#roomResultTitle"),
+  roomResultText: document.querySelector("#roomResultText"),
+  roomReturnLobbyBtn: document.querySelector("#roomReturnLobbyBtn"),
+  battleLogToggle: document.querySelector("#battleLogToggle"),
+  battleLogHeaderBtn: document.querySelector("#battleLogHeaderBtn"),
+  battleLogDialog: document.querySelector("#battleLogDialog"),
+  battleLogDialogList: document.querySelector("#battleLogDialogList"),
+  battleLogCloseBtn: document.querySelector("#battleLogCloseBtn"),
   roomModeLabel: document.querySelector("#roomModeLabel"),
   roomTitle: document.querySelector("#roomTitle"),
   roomHint: document.querySelector("#roomHint"),
@@ -493,14 +539,16 @@ const actionDefinitions = {
       return !actor.asleep && !target.dead && canFireSniper(actor, target);
     },
     perform(actor, target) {
-      target.hp = 0;
-      target.dead = true;
-      target.vehicle = null;
+      const bossTarget = Boolean(target.boss || bosses[target.character]);
+      target.hp = bossTarget ? Math.max(0, target.hp - 4) : 0;
+      target.dead = target.hp === 0;
+      if (target.dead) target.vehicle = null;
       actor.sniper.loaded = false;
       actor.sniper.chambered = false;
       actor.sniper.aimedTarget = null;
       actor.sniper.aimedLocation = null;
       actor.sniper.aimBroken = false;
+      if (bossTarget && !target.dead) return `${actor.name}用狙击枪命中${target.name}，造成 4 点伤害；BOSS 没有被一枪射杀。`;
       return `${actor.name}开枪射杀了${target.name}。`;
     },
   },
@@ -645,11 +693,32 @@ function showScreen(screen) {
 }
 
 function renderCharacterPicker() {
-  const character = characters[selectedCharacter] || characters.scout;
+  const pickerPlayer = roomState?.players?.find((player) => player.id === roomPlayerId);
+  const bossPicker = roomMode === "boss" && Boolean(pickerPlayer?.boss);
+  const allowedCharacters = bossPicker ? ["overlord", "stalker", "magician"] : ["scout", "vanguard", "medic", "engineer"];
+  if (!allowedCharacters.includes(selectedCharacter)) selectedCharacter = allowedCharacters[0];
+  const character = roleConfig(selectedCharacter);
+  const profiles = {
+    scout: { description: "可快速抵达任意地图节点。", skills: ["被动：全图疾行", "生命：3"] },
+    vanguard: { description: "近距离制造高额伤害。", skills: ["主动：强袭造成 2 点伤害", "生命：4"] },
+    medic: { description: "为队友提供关键恢复。", skills: ["主动：战地急救", "生命：3"] },
+    engineer: { description: "战术装备专家。", skills: ["被动：开局自带护盾", "生命：3"] },
+    overlord: { description: "群体压制型 BOSS，擅长范围伤害和持续恢复。", skills: ["限定：暴君横扫", "主动：威慑怒吼", "被动：霸主体魄", "生命：12"] },
+    stalker: { description: "单体追杀型 BOSS，能跨区锁定并斩杀残血目标。", skills: ["主动：追猎突袭", "限定：致命追猎", "被动：猎杀本能", "生命：10"] },
+    magician: { description: "卡牌资源型 BOSS，以低血量开局换取位移、恢复和改写行动权。", skills: ["主动：瞬移 / 卡牌疗愈", "主动：改写结果", "限定：魔术终幕", "生命：4/8 · 卡牌：2/5"] },
+  };
+  const profile = profiles[selectedCharacter] || profiles.scout;
   els.characterButtons.forEach((button) => {
+    const available = allowedCharacters.includes(button.dataset.character);
+    button.hidden = !available;
+    button.classList.toggle("hidden", !available);
     button.classList.toggle("selected", button.dataset.character === selectedCharacter);
   });
   if (els.characterSelected) els.characterSelected.textContent = `已选择：${character.icon} ${character.name}`;
+  if (els.characterPreview) { els.characterPreview.src = `assets/characters/${selectedCharacter}.png`; els.characterPreview.alt = character.name; }
+  if (els.characterName) els.characterName.textContent = `${character.icon} ${character.name}`;
+  if (els.characterDescription) els.characterDescription.textContent = profile.description;
+  if (els.characterSkills) els.characterSkills.innerHTML = profile.skills.map((skill) => `<li>${skill}</li>`).join("");
 }
 
 async function openCharacterSelect(mode) {
@@ -668,34 +737,27 @@ async function openCharacterSelect(mode) {
   renderCharacterPicker();
   showScreen("character");
   if (mode !== "single") {
+    closePeer();
+    resetRoomRuntime();
     roomMode = mode;
     roomState = null;
     roomPlayerId = null;
     roomIsHost = true;
-    closePeer();
     gameMode = "room";
     updateRoomIntro();
     await openRoomSocket();
-    sendNetwork({ type: "createRoom", mode: roomMode, character: selectedCharacter });
+    sendNetwork({ type: "createRoom", mode: roomMode });
     setRoomStatus("正在自动创建房间...");
   }
 }
 
 function startSelectedMode() {
-  if (selectedMode === "single") {
-    startSingleMode();
-    return;
-  }
-  if (!roomState) {
-    setRoomStatus("房间仍在创建，请稍候");
-    return;
-  }
-  updateRoomIntro();
-  setRoomBattleVisible(false);
-  renderRoomLobby();
+  if (selectedMode === "single") { startSingleMode(); return; }
+  if (!roomState || !roomState.selectingCharacters) { showScreen("room"); return; }
+  sendNetwork({ type: "setCharacter", character: selectedCharacter });
+  setRoomStatus("角色已确认，等待其他玩家选择角色");
   showScreen("room");
 }
-
 function applySelectedCharacterToSingle() {
   const actor = state.actors.player;
   const character = characters[selectedCharacter] || characters.scout;
@@ -709,12 +771,203 @@ function setRoomBattleVisible(active) {
   if (els.roomBattlePanel) els.roomBattlePanel.classList.toggle("hidden", !active);
   if (els.roomShell) els.roomShell.classList.toggle("battle-active", active);
   document.querySelectorAll(".lobby-only").forEach((node) => node.classList.toggle("hidden", active));
-  if (els.roomBattleStatus) {
-    els.roomBattleStatus.textContent = active ? "战斗已开始。" : "等待房主开始房间";
+  if (els.roomBattleStatus) els.roomBattleStatus.textContent = active ? "战斗已开始。" : "等待房主开始房间。";
+  if (els.battleLogHeaderBtn) els.battleLogHeaderBtn.classList.toggle("hidden", !active);
+  if (!active) setRoomBattleLogVisible(false);
+}
+
+function setRoomBattleLogVisible(open) {
+  roomLogOpen = Boolean(open && roomBattle);
+  els.battleLogDialog?.classList?.toggle("hidden", !roomLogOpen);
+  els.battleLogHeaderBtn?.setAttribute?.("aria-expanded", String(roomLogOpen));
+  if (roomLogOpen) renderRoomBattleLogDialog();
+}
+function renderRoomBattleLogDialog() {
+  if (!els.battleLogDialogList) return;
+  els.battleLogDialogList.innerHTML = "";
+  (roomBattle?.log || []).forEach((entry) => {
+    const item = document.createElement("li");
+    item.textContent = entry;
+    els.battleLogDialogList.appendChild(item);
+  });
+}
+function setRoomDuelVisible(active) {
+  if (els.roomDuelScreen) els.roomDuelScreen.classList.toggle("hidden", !active);
+  if (els.roomShell) els.roomShell.classList.toggle("duel-active", active);
+}
+
+function startRoomDuelAnimation(choice) {
+  const player = getRoomPlayer(roomPlayerId);
+  if (!roomBattle || roomBattle.phase !== "duel" || !player || player.dead || roomBattle.throws[roomPlayerId] || roomDuelTimer) return;
+  roomDuelChoice = choice;
+  renderRoomDuelScreen();
+  roomDuelTimer = setTimeout(() => {
+    roomDuelTimer = null;
+    roomDuelChoice = null;
+    submitRoomThrow(choice);
+  }, 1000);
+}
+
+function startRoomDuelReveal(outcome = "win") {
+  if (!roomBattle?.lastThrows || roomDuelReveal || roomDuelRevealTimer) return;
+  roomDuelRevealRound = roomBattle.round;
+  roomDuelReveal = { round: roomBattle.round, stage: "windup", outcome };
+  renderRoomBattle();
+  roomDuelRevealTimer = setTimeout(() => {
+    if (!roomDuelReveal || roomDuelReveal.round !== roomBattle?.round) return;
+    roomDuelReveal.stage = "result";
+    renderRoomBattle();
+    roomDuelRevealTimer = setTimeout(() => {
+      if (!roomDuelReveal || roomDuelReveal.round !== roomBattle?.round) return;
+      roomDuelReveal = null;
+      roomDuelRevealTimer = null;
+      if (roomIsHost && roomBattle?.magicianRpsOffer?.pendingReveal) {
+        roomBattle.phase = "magicianChoice";
+        roomBattle.magicianRpsOffer.pendingReveal = false;
+        syncRoomBattle();
+        const pendingMagician = getRoomPlayer(roomBattle.magicianRpsOffer.magicianId);
+        if (pendingMagician?.bot) setTimeout(() => resolveMagicianRpsChoice(true, roomMagicianEdits), 500);
+      }
+      renderRoomBattle();
+      maybeRunRoomBotTurn();
+    }, roomDuelReveal.outcome === "tie" ? 1000 : 3000);
+  }, 1000);
+}
+
+function renderRoomActionReport() {
+  if (!els.roomDuelScreen || !roomBattle?.actionReport) return;
+  els.roomDuelScreen.innerHTML = `<div class="duel-kicker">回合行动播报</div><h2>行动完成</h2><p class="duel-prompt result">下一位行动者即将开始</p><div class="duel-action-report"><span>战况播报</span><strong>${roomBattle.actionReport.text}</strong></div>`;
+}
+
+function renderRoomMagicianThrowEditor() {
+  if (!els.roomDuelScreen || !roomBattle?.magicianRpsOffer) return;
+  const offer = roomBattle.magicianRpsOffer;
+  const localIsMagician = roomPlayerId === offer.magicianId;
+  const editingSelf = roomMagicianEditStage === "editSelf";
+  const alive = roomAlivePlayers();
+  const options = Object.entries(throws).map(([key, data]) => `<option value="${key}">${data.name} ${data.icon}</option>`).join("");
+  const rows = alive.map((player) => {
+    const own = player.id === offer.magicianId;
+    const editable = localIsMagician && (editingSelf ? own : !own);
+    return `<label class="magician-throw-row"><span>${player.name}${own ? "（你）" : ""}</span><select data-player-id="${player.id}" ${editable ? "" : "disabled"}>${options}</select></label>`;
+  }).join("");
+  els.roomDuelScreen.innerHTML = `<div class="duel-kicker">第 ${roomBattle.round} 回合 · 魔术师改写</div><h2>${editingSelf ? "修改自己的出拳" : "修改其他玩家的出拳"}</h2><p class="duel-prompt result">确认改写消耗 2 张卡牌，并立即重新计算行动顺序。</p><div class="magician-throw-editor">${rows}</div><div class="duel-choice-buttons"></div>`;
+  alive.forEach((player) => {
+    const select = els.roomDuelScreen.querySelector?.(`select[data-player-id="${player.id}"]`);
+    if (!select) return;
+    select.value = roomMagicianEdits[player.id] || offer.throws[player.id];
+    select.addEventListener("change", () => { roomMagicianEdits[player.id] = select.value; });
+  });
+  const choices = els.roomDuelScreen.querySelector?.(".duel-choice-buttons");
+  if (choices && localIsMagician) {
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "duel-choice-button ready";
+    confirm.textContent = "确认改写（-2 卡）";
+    confirm.addEventListener("click", () => resolveMagicianRpsChoice(true, roomMagicianEdits));
+    choices.appendChild(confirm);
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "duel-choice-button";
+    cancel.textContent = "保持原结果";
+    cancel.addEventListener("click", () => resolveMagicianRpsChoice(false, roomMagicianEdits));
+    choices.appendChild(cancel);
   }
 }
+function roomActionActorLabel(actor) {
+  const role = roleConfig(actor?.character).name;
+  const name = actor?.name || "未知玩家";
+  if (roomBattle?.mode === "boss") return `${actor.boss ? "BOSS" : "生存者"} ${role}（${name}）`;
+  if (roomBattle?.mode === "team") return `${actor.team === "A" ? "红队" : "蓝队"} ${role}（${name}）`;
+  return `${role}（${name}）`;
+}
+
+function roomActionNarration(actor, entry) {
+  const identity = roomActionActorLabel(actor);
+  const name = actor?.name || "";
+  return name && entry.startsWith(name) ? `${identity}${entry.slice(name.length).trimStart()}` : `${identity}：${entry}`;
+}
+function showRoomActionReport(entry) {
+  if (!roomBattle) return;
+  roomBattle.actionReport = { text: entry, round: roomBattle.round };
+  syncRoomBattle();
+  renderRoomBattle();
+  if (!roomIsHost) return;
+  if (typeof clearTimeout === "function") clearTimeout(roomActionReportTimer);
+  roomActionReportTimer = setTimeout(() => {
+    if (!roomBattle?.actionReport || roomBattle.actionReport.text !== entry) return;
+    roomBattle.actionReport = null;
+    roomActionReportTimer = null;
+    finishRoomAction();
+  }, 1800);
+}
+function renderRoomDuelScreen() {
+  if (!els.roomDuelScreen || !roomBattle) return;
+  const player = getRoomPlayer(roomPlayerId);
+  if (roomBattle.phase === "magicianChoice" && roomBattle.magicianRpsOffer) {
+    const magician = getRoomPlayer(roomBattle.magicianRpsOffer.magicianId);
+    const isMagician = player?.id === magician?.id;
+    els.roomDuelScreen.innerHTML = `<div class="duel-kicker">第 ${roomBattle.round} 回合 · 原始结果已揭晓</div><h2>是否改变自己的出拳？</h2><p class="duel-prompt result">${isMagician ? "先决定是否修改你自己的出拳；确认后还可以继续修改其他玩家。" : `等待 ${magician?.name || "魔术师"} 决定是否修改自己的出拳…`}</p><div class="duel-choice-buttons"></div>`;
+    const buttons = els.roomDuelScreen.querySelector?.(".duel-choice-buttons");
+    if (buttons && isMagician) {
+      [["editSelf", "改变自己的出拳（-2 卡）"], ["editOthers", "保持自己，修改其他玩家"], ["keep", "保持原结果"]].forEach(([action, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `duel-choice-button${action !== "keep" ? " ready" : ""}`;
+        button.disabled = action !== "keep" && (magician.cards || 0) < 2;
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          if (action === "keep") return resolveMagicianRpsChoice(false, roomMagicianEdits);
+          roomMagicianEditStage = action;
+          renderRoomMagicianThrowEditor();
+        });
+        buttons.appendChild(button);
+      });
+    }
+    return;
+  }  const hasThrown = Boolean(roomBattle.throws[roomPlayerId]);
+  const isReveal = Boolean(roomDuelReveal);
+  const isResult = roomDuelReveal?.stage === "result";
+  const isTie = roomDuelReveal?.outcome === "tie";
+  const canThrow = player && !player.dead && !player.bot && !hasThrown && !roomDuelTimer && !isReveal;
+  const chosen = roomDuelChoice || roomBattle.throws[roomPlayerId];
+  const winners = isResult && !isTie ? new Set(roomBattle.actionQueue || []) : new Set();
+  const alive = roomAlivePlayers();
+  const winnerNames = isResult ? alive.filter((item) => winners.has(item.id)).map((item) => item.name).join("、") : "";
+  const prompt = isReveal
+    ? isResult ? isTie ? "平局！本回合重新猜拳" : `${winnerNames || "胜者"} 获得行动权！` : "所有玩家正在前摇出拳…"
+    : player?.dead ? "你已被淘汰，本回合无需出拳" : hasThrown ? "已出拳，等待其他玩家…" : chosen ? "拳势已出，等待判定…" : "选择拳型，争夺本回合行动权";
+  const hands = alive.map((item, index) => {
+    const choice = isResult ? roomBattle.lastThrows?.[item.id] : item.id === roomPlayerId ? chosen : null;
+    const isWinner = winners.has(item.id);
+    const hand = choice ? throws[choice].icon : "✊";
+    const label = isResult && choice ? throws[choice].name : "蓄力中";
+    return `<article class="duel-player-hand${isWinner ? " winner" : ""}" style="--hand-delay:${index * 90}ms">${isWinner ? `<em class="duel-winner-badge">胜者</em>` : ""}<span>${roomPlayerLabel(item)}</span><b>${hand}</b><small>${label}</small></article>`;
+  }).join("");
+
+  els.roomDuelScreen.innerHTML = `
+    <div class="duel-kicker">第 ${roomBattle.round} 回合 · 行动权争夺</div>
+    <h2>${isResult ? isTie ? "平局" : "胜负揭晓" : "猜拳对决"}</h2>
+    <p class="duel-prompt${isResult ? " result" : ""}">${prompt}</p>
+    <div class="duel-stage duel-player-stage${isReveal ? " is-animating" : ""}${isResult ? " is-revealed" : ""}">${hands}</div>
+    ${isResult ? `<div class="duel-result-banner">${isTie ? "平局，重新猜拳" : `${winnerNames || "胜者"} 获得行动权`}</div>` : ""}
+    <div class="duel-choice-buttons"></div>
+  `;
+
+  const choices = els.roomDuelScreen.querySelector?.(".duel-choice-buttons");
+  if (!choices || isReveal) return;
+  Object.entries(throws).forEach(([choice, data]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "duel-choice-button";
+    button.disabled = !canThrow;
+    button.innerHTML = `<strong>${data.icon}</strong><span>${data.name}</span>`;
+    button.addEventListener("click", () => startRoomDuelAnimation(choice));
+    choices.appendChild(button);
+  });
+}
 function roomModeName(mode = roomMode) {
-  return mode === "team" ? "阵营模式" : "乱战模式";
+  return mode === "boss" ? "BOSS 对战" : mode === "team" ? "阵营模式" : "乱战模式";
 }
 
 function roomCapacity(mode = roomMode) {
@@ -723,9 +976,9 @@ function roomCapacity(mode = roomMode) {
 
 function updateRoomIntro() {
   if (els.roomModeLabel) els.roomModeLabel.textContent = roomModeName();
-  if (els.roomTitle) els.roomTitle.textContent = roomMode === "team" ? "3v3 阵营房间" : "五人乱战房间";
+  if (els.roomTitle) els.roomTitle.textContent = roomMode === "boss" ? "BOSS 对战房间" : roomMode === "team" ? "3v3 阵营房间" : "五人乱战房间";
   if (els.roomHint) {
-    els.roomHint.textContent = roomMode === "team" ? "最多 3v3，房主可以加入人机补位。" : "最多 5 人，各自为战，房主可以加入人机。";
+    els.roomHint.textContent = roomMode === "boss" ? "房主分配 1 名 BOSS 和生存者；BOSS 对抗最多 4 名生存者。" : roomMode === "team" ? "最多 3v3，房主可以加入人机补位。" : "最多 5 人，各自为战，房主可以加入人机。";
   }
   if (els.roomMapHint) els.roomMapHint.textContent = "";
 }
@@ -745,12 +998,41 @@ function startSingleMode() {
   render();
 }
 
+function clearRoomTransientState() {
+  [roomDuelTimer, roomDuelRevealTimer, roomActionReportTimer].forEach((timer) => {
+    if (timer && typeof clearTimeout === "function") clearTimeout(timer);
+  });
+  roomDuelChoice = null;
+  roomDuelTimer = null;
+  roomDuelReveal = null;
+  roomDuelRevealTimer = null;
+  roomDuelRevealRound = null;
+  roomActionReportTimer = null;
+  roomSkillTargeting = null;
+  roomSkillMode = null;
+  roomHealAmount = 1;
+  roomMagicianEdits = {};
+  roomMagicianEditStage = "askSelf";
+  if (els.roomSkillDialog) {
+    els.roomSkillDialog.classList.add("hidden");
+    els.roomSkillDialog.innerHTML = "";
+  }
+  setRoomDuelVisible(false);
+}
+
+function resetRoomRuntime() {
+  clearRoomTransientState();
+  roomBattle = null;
+  setRoomBattleLogVisible(false);
+  els.roomBattlePanel?.classList?.remove("boss-layout", "local-survivor", "log-open");
+}
 function openModeRoom(mode) {
+  closePeer();
+  resetRoomRuntime();
   roomMode = mode;
   roomState = null;
   roomPlayerId = null;
   roomIsHost = false;
-  closePeer();
   gameMode = "room";
   updateRoomIntro();
   if (els.roomLocalCode) els.roomLocalCode.value = "";
@@ -760,18 +1042,23 @@ function openModeRoom(mode) {
   renderRoomLobby();
   showScreen("room");
 }
-
+async function enterRoomMode(mode) {
+  openModeRoom(mode);
+  await createModeRoom();
+}
 async function createModeRoom() {
   closePeer();
+  resetRoomRuntime();
   gameMode = "room";
   roomIsHost = true;
   roomState = null;
+  roomPlayerId = "pending-host";
+  applyRoomState(fallbackRoom("", roomPlayerId));
   await openRoomSocket();
   sendNetwork({ type: "createRoom", mode: roomMode, character: selectedCharacter });
   setRoomStatus("正在创建房间...");
   renderRoomLobby();
 }
-
 async function joinModeRoom() {
   const code = els.roomRemoteCode.value.trim().toUpperCase();
   if (!code) {
@@ -779,14 +1066,16 @@ async function joinModeRoom() {
     return;
   }
   closePeer();
+  resetRoomRuntime();
   gameMode = "room";
   roomIsHost = false;
+  roomState = null;
+  roomPlayerId = "pending-guest";
   await openRoomSocket();
-  sendNetwork({ type: "joinRoom", code, character: selectedCharacter });
+  sendNetwork({ type: "joinRoom", code, mode: roomMode, character: selectedCharacter });
   setRoomStatus(`正在加入房间 ${code}...`);
   renderRoomLobby();
 }
-
 async function copyModeRoomCode() {
   const code = els.roomLocalCode.value.trim();
   if (!code) {
@@ -812,7 +1101,14 @@ function addRoomBot() {
     setRoomStatus("只有房主可以加入人机");
     return;
   }
+  if (!roomState?.code) {
+    setRoomStatus("正在创建房间，请稍候");
+    return;
+  }
   sendNetwork({ type: "addBot" });
+}function assignRoomPlayer(playerId, assignment) {
+  if (!roomIsHost || !playerId) return;
+  sendNetwork({ type: "assignPlayer", playerId, assignment });
 }
 
 function startModeRoom() {
@@ -820,10 +1116,12 @@ function startModeRoom() {
     setRoomStatus("等待房主开始房间");
     return;
   }
-  roomBattle = createRoomBattle(roomState || fallbackRoom(els.roomLocalCode.value.trim() || "ROOM"));
-  sendNetwork({ type: "startRoom", battle: roomBattle });
-  applyRoomState({ ...(roomState || fallbackRoom(els.roomLocalCode.value.trim() || "ROOM")), started: true });
-  renderRoomBattle();
+  if (!roomState?.code) {
+    setRoomStatus("正在创建房间，请稍候");
+    return;
+  }
+  sendNetwork({ type: "startRoom" });
+  setRoomStatus("正在等待服务器确认开始...");
 }
 
 function roomPlayerLabel(player) {
@@ -832,7 +1130,8 @@ function roomPlayerLabel(player) {
 }
 
 function roomHomeForPlayer(player, index) {
-  if (roomMode === "team") return player.team === "B" ? "blueHome" : "redHome";
+  const activeMode = roomBattle?.mode || roomMode;
+  if (activeMode === "team" || activeMode === "boss") return player.team === "B" ? "blueHome" : "redHome";
   return "homeRing";
 }
 
@@ -848,18 +1147,29 @@ function ensureRoomPlayerId() {
 function createRoomBattle(room) {
   const players = (room?.players || []).map((player, index) => ({
     ...player,
-    character: characters[player.character] ? player.character : "scout",
-    hp: characters[player.character]?.maxHp || 3,
-    maxHp: characters[player.character]?.maxHp || 3,
+    boss: Boolean(player.boss),
+    character: player.boss ? (bosses[player.character] ? player.character : "overlord") : (characters[player.character] ? player.character : "scout"),
+    hp: player.boss ? (player.character === "magician" ? 4 : (bosses[player.character]?.maxHp || bosses.overlord.maxHp)) : (characters[player.character]?.maxHp || 3),
+    maxHp: player.boss ? (bosses[player.character]?.maxHp || bosses.overlord.maxHp) : (characters[player.character]?.maxHp || 3),
     asleep: true,
     dead: false,
     location: roomHomeForPlayer(player, index),
-    inventory: { knife: false, shield: false, shieldHp: 0, sniper: false, medkit: player.character === "medic" ? 1 : 0, smoke: false, rocket: false },
+    inventory: { knife: false, shield: player.character === "engineer", shieldHp: player.character === "engineer" ? 1 : 0, sniper: false, medkit: player.character === "medic" ? 1 : 0, smoke: false, rocket: false },
     medkitTaken: player.character === "medic" ? 1 : 0,
     vanguardPulseArmed: false,
     vanguardPulseUsed: false,
     smoke: false,
     roleUsed: false,
+    bossSkillUsed: false,
+    bossRoarReadyRound: 1,
+    stalkerPounceReadyRound: 1,
+    stalkerHuntUsed: false,
+    cards: player.character === "magician" ? 2 : 0,
+    magicianTeleportReadyRound: 1,
+    magicianHealReadyRound: 1,
+    magicianRpsUsedRound: 0,
+    magicianUltimateUsed: false,
+    magicianSleepRounds: 0,
   }));
   const battle = {
     mode: room?.mode || roomMode,
@@ -891,19 +1201,19 @@ function getRoomPlayer(id) {
 
 function isRoomEnemy(actor, target) {
   if (!actor || !target || actor.id === target.id || target.dead) return false;
-  if (roomBattle.mode === "team") return actor.team !== target.team;
+  if (roomBattle.mode === "team" || roomBattle.mode === "boss") return actor.team !== target.team;
   return true;
 }
 
 function roomConnectedLocations(location) {
-  const config = roomMapConfigs[roomBattle?.mode || roomMode];
+  const config = roomMapConfig(roomBattle?.mode || roomMode);
   return config.edges
     .filter(([from, to]) => from === location || to === location)
     .map(([from, to]) => (from === location ? to : from));
 }
 
 function roomLocationName(id) {
-  return roomMapConfigs[roomBattle?.mode || roomMode].nodes[id]?.name || id;
+  return roomMapConfig(roomBattle?.mode || roomMode).nodes[id]?.name || id;
 }
 function roomThrowBadge(player) {
   if (!roomBattle || !player) return "";
@@ -950,6 +1260,15 @@ function roomAddLog(text) {
   roomBattle.log = roomBattle.log.slice(0, 28);
 }
 
+function renderRoomActionBulletin() {
+  if (!els.roomActionBulletin) return;
+  const broadcast = roomBattle?.actionBroadcast;
+  const visible = Boolean(broadcast?.text) && !roomBattle?.gameOver;
+  els.roomActionBulletin.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  els.roomActionBulletin.innerHTML = `<span>${broadcast.title || "战况播报"}</span><strong>${broadcast.text}</strong>`;
+}
+
 function syncRoomBattle() {
   if (gameMode === "room" && roomIsHost && roomBattle) {
     sendNetwork({ type: "roomBattleState", battle: roomBattle });
@@ -961,6 +1280,57 @@ function compareRoomThrows(a, b) {
   if (throws[a]?.beats === b) return -1;
   if (throws[b]?.beats === a) return 1;
   return 0;
+}
+
+function finalizeRoomDuelQueue(queueIds, changedByMagician = false) {
+  const queue = queueIds.map((id) => getRoomPlayer(id)).filter((player) => player && !player.dead);
+  roomBattle.magicianRpsOffer = null;
+
+  roomBattle.phase = "action";
+  roomBattle.actionQueue = queue.map((player) => player.id);
+  roomBattle.currentActorId = roomBattle.actionQueue[0] || null;
+  roomBattle.message = `第 ${roomBattle.round} 回合：${queue.map((player) => player.name).join("、")} 获得行动权${changedByMagician ? "（魔术师改写）" : ""}`;
+  roomBattle.actionBroadcast = { title: changedByMagician ? "猜拳结果已改写" : "行动权已确定", text: roomBattle.message };
+  roomAddLog(`行动队列：${queue.map((player) => player.name).join(" → ")}`);
+  triggerFeedback("win", `${queue.map((player) => player.name).join("、")} 获得行动权！`);
+  syncRoomBattle();
+  renderRoomBattle();
+  maybeRunRoomBotTurn();
+}
+
+function resolveMagicianRpsChoice(useSkill, edits = roomMagicianEdits) {
+  if (!roomBattle?.magicianRpsOffer) return;
+  if (!roomIsHost) {
+    sendNetwork({ type: "magicianRpsChoice", actorId: roomPlayerId, useSkill: Boolean(useSkill), edits });
+    return;
+  }
+  const offer = roomBattle.magicianRpsOffer;
+  const magician = getRoomPlayer(offer.magicianId);
+  if (!magician || magician.dead) return finalizeRoomDuelQueue(offer.originalQueue);
+  const canUse = useSkill && (magician.cards || 0) >= 2 && magician.magicianRpsUsedRound !== roomBattle.round;
+  if (canUse) {
+    magician.cards -= 2;
+    magician.magicianRpsUsedRound = roomBattle.round;
+    const changedThrows = { ...offer.throws, ...edits };
+    roomBattle.lastThrows = changedThrows;
+    const changedChoices = [...new Set(Object.values(changedThrows))];
+    if (changedChoices.length !== 2) {
+      roomBattle.cardsAwardedThisRound = false;
+      roomBattle.message = "改写后的结果仍为平局，本回合不推进且不获得卡牌。";
+      roomBattle.phase = "duel";
+      roomBattle.throws = {};
+      roomBattle.magicianRpsOffer = null;
+      syncRoomBattle();
+      renderRoomBattle();
+      return;
+    }
+    const changedWinningChoice = throws[changedChoices[0]].beats === changedChoices[1] ? changedChoices[0] : changedChoices[1];
+    const changedQueue = roomAlivePlayers().filter((player) => changedThrows[player.id] === changedWinningChoice).sort((a, b) => roomBattle.players.findIndex((p) => p.id === a.id) - roomBattle.players.findIndex((p) => p.id === b.id)).map((player) => player.id);
+    roomAddLog(`${magician.name} 消耗 2 张卡牌发动改写结果，将自己变为本轮优先行动者。`);
+    finalizeRoomDuelQueue(changedQueue, true);
+  } else {
+    finalizeRoomDuelQueue(offer.originalQueue);
+  }
 }
 
 function resolveRoomDuelIfReady() {
@@ -978,7 +1348,6 @@ function resolveRoomDuelIfReady() {
     roomBattle.message = `第 ${roomBattle.round} 回合平局：${reason}`;
     roomAddLog(`第 ${roomBattle.round} 回合平局：${reason}，重新出拳。`);
     triggerFeedback("tie", "平局！重新出拳");
-    roomBattle.round += 1;
     roomBattle.throws = {};
     syncRoomBattle();
     renderRoomBattle();
@@ -996,10 +1365,31 @@ function resolveRoomDuelIfReady() {
       return roomBattle.players.findIndex((player) => player.id === a.id) - roomBattle.players.findIndex((player) => player.id === b.id);
     });
 
+  const magician = alive.find((player) => player.character === "magician" && (player.cards || 0) >= 2 && player.magicianRpsUsedRound !== roomBattle.round);
+  if (magician) {
+    // Preserve the original winning queue while its result is shown; the magician
+    // may still replace it after the reveal, but the result cards need this now.
+    roomBattle.phase = "action";
+    roomBattle.actionQueue = queue.map((player) => player.id);
+    roomBattle.currentActorId = roomBattle.actionQueue[0] || null;
+    roomBattle.magicianRpsOffer = {
+      magicianId: magician.id,
+      originalQueue: queue.map((player) => player.id),
+      throws: { ...roomBattle.lastThrows },
+      pendingReveal: true
+    };
+    roomMagicianEdits = { ...roomBattle.lastThrows };
+    roomMagicianEditStage = "askSelf";
+    roomBattle.message = `${magician.name} 的原始猜拳结果已揭晓，等待其决定是否改写`;
+    syncRoomBattle();
+    renderRoomBattle();
+    return;
+  }
   roomBattle.phase = "action";
   roomBattle.actionQueue = queue.map((player) => player.id);
   roomBattle.currentActorId = roomBattle.actionQueue[0] || null;
   roomBattle.message = `第 ${roomBattle.round} 回合：${queue.map((player) => player.name).join("、")} 获得行动权`;
+  roomBattle.actionBroadcast = { title: "行动权已确定", text: roomBattle.message };
   roomAddLog(`行动队列：${queue.map((player) => `${player.name}${player.inventory.knife ? "（刀优先）" : ""}`).join(" → ")}`);
   triggerFeedback("win", `${queue.map((player) => player.name).join("、")} 赢得行动权！`);
   syncRoomBattle();
@@ -1015,8 +1405,46 @@ function spawnRoomSupplyDrop() {
   roomAddLog(`战场空投落在${roomLocationName(roomBattle.supplyDrop.location)}：${items[item].name}。`);
 }
 
+function roomResultForLocalPlayer() {
+  const player = getRoomPlayer(roomPlayerId);
+  if (!roomBattle || !player) return "LOSE";
+  if (roomBattle.mode === "team") {
+    const winningTeam = roomBattle.winnerText.startsWith("红队") ? "A" : roomBattle.winnerText.startsWith("蓝队") ? "B" : null;
+    return player.team === winningTeam ? "WIN" : "LOSE";
+  }
+  return roomBattle.winnerText.startsWith(player.name) ? "WIN" : "LOSE";
+}
+
+function renderRoomResult() {
+  if (!els.roomResultOverlay) return;
+  const complete = Boolean(roomBattle?.gameOver);
+  els.roomResultOverlay.classList.toggle("hidden", !complete);
+  if (!complete) return;
+  const result = roomResultForLocalPlayer();
+  if (els.roomResultTitle) {
+    els.roomResultTitle.textContent = result;
+    els.roomResultTitle.classList.toggle("lose", result === "LOSE");
+  }
+  if (els.roomResultText) els.roomResultText.textContent = roomBattle.winnerText || "战斗结束";
+}
+
+function returnRoomToLobby() {
+  if (!roomBattle?.gameOver) return;
+  sendNetwork({ type: "returnToLobby" });
+  if (els.roomReturnLobbyBtn) {
+    els.roomReturnLobbyBtn.disabled = true;
+    els.roomReturnLobbyBtn.textContent = "正在返回房间...";
+  }
+}
 function roomWinText() {
   const alive = roomAlivePlayers();
+  if (roomBattle.mode === "boss") {
+    const boss = alive.find((player) => player.boss);
+    const survivors = alive.filter((player) => !player.boss);
+    if (!boss) return "生存者获胜";
+    if (!survivors.length) return "BOSS获胜";
+    return "";
+  }
   if (roomBattle.mode === "team") {
     const teams = [...new Set(alive.map((player) => player.team))];
     if (teams.length === 1) return teams[0] === "A" ? "红队获胜" : "蓝队获胜";
@@ -1039,6 +1467,15 @@ function finishRoomAction() {
     return;
   }
 
+  const finishedActor = getRoomPlayer(roomBattle.currentActorId);
+  if (finishedActor?.magicianExtraActionPending > 0) {
+    finishedActor.magicianExtraActionPending -= 1;
+  } else if (finishedActor?.magicianSleepAfterExtra) {
+    finishedActor.magicianSleepAfterExtra = false;
+    finishedActor.asleep = true;
+    finishedActor.magicianSleepRounds = 1;
+    roomAddLog(`${finishedActor.name} 在额外行动后进入休眠。`);
+  }
   roomBattle.actionQueue.shift();
   // An eliminated player may have been waiting later in this round's queue.
   // Remove them before selecting the next actor so the battle cannot stall.
@@ -1048,6 +1485,16 @@ function finishRoomAction() {
     roomBattle.message = `轮到 ${getRoomPlayer(roomBattle.currentActorId).name} 行动`;
   } else {
     roomBattle.round += 1;
+    if ((roomBattle.round - 1) % 2 === 0) {
+      roomBattle.players.filter((player) => player.character === "magician" && !player.dead).forEach((player) => {
+        const gained = addMagicianCards(player, 1);
+        if (gained) roomAddLog(`${player.name} 的被动技生效，获得 1 张卡牌（${player.cards}/5）。`);
+      });
+    }
+    roomBattle.players.filter((player) => player.character === "overlord" && !player.dead && player.hp < player.maxHp).forEach((player) => {
+      player.hp = Math.min(player.maxHp, player.hp + 1);
+      roomAddLog(`${player.name} 的被动技“霸主体魄”生效，回复 1 点生命。`);
+    });
     roomBattle.phase = "duel";
     roomBattle.currentActorId = null;
     roomBattle.throws = {};
@@ -1092,7 +1539,33 @@ function medkitLimit(player) {
   return player.character === "medic" ? 2 : 1;
 }
 
+function bossRoarCooldown(player) {
+  return Math.max(0, (player.bossRoarReadyRound || 1) - (roomBattle?.round || 1));
+}
+
+function stalkerPounceCooldown(player) {
+  return Math.max(0, (player.stalkerPounceReadyRound || 1) - (roomBattle?.round || 1));
+}
+
+function magicianTeleportCooldown(player) {
+  return Math.max(0, (player.magicianTeleportReadyRound || 1) - (roomBattle?.round || 1));
+}
+
+function magicianHealCooldown(player) {
+  return Math.max(0, (player.magicianHealReadyRound || 1) - (roomBattle?.round || 1));
+}
+
+function addMagicianCards(player, amount) {
+  if (player?.character !== "magician" || amount <= 0) return 0;
+  const before = player.cards || 0;
+  player.cards = Math.min(5, before + amount);
+  return player.cards - before;
+}
+
 function roomRoleSkillLabel(player) {
+  if (player.character === "overlord") return `横扫${player.bossSkillUsed ? "已用" : "可用"} · 怒吼${bossRoarCooldown(player) ? `冷却${bossRoarCooldown(player)}` : "可用"} · 体魄回血`;
+  if (player.character === "stalker") return `突袭${stalkerPounceCooldown(player) ? `冷却${stalkerPounceCooldown(player)}` : "可用"} · 致命追猎${player.stalkerHuntUsed ? "已用" : "可用"} · 半血增伤`;
+  if (player.character === "magician") return `卡牌 ${player.cards || 0}/5 · 瞬移 · 疗愈 · 改写 · 终幕`;
   if (player.character === "vanguard") return player.vanguardPulseUsed ? "震荡波已使用" : player.vanguardPulseArmed ? "震荡波待触发" : "震荡波可用";
   if (player.character === "medic") return "远程急救可用";
   return "疾行常驻";
@@ -1153,7 +1626,7 @@ function getRoomActions(actorId) {
   if (!roomBattle || !actor || actor.dead || roomBattle.phase !== "action" || roomBattle.currentActorId !== actorId) return [];
   if (actor.asleep) return [{ id: "wake", label: "起床" }];
   const actions = [];
-  const mapNodes = Object.keys(roomMapConfigs[roomBattle.mode].nodes);
+  const mapNodes = Object.keys(roomMapConfig(roomBattle.mode).nodes);
   const destinations = actor.character === "scout"
     ? mapNodes.filter((to) => to !== actor.location)
     : roomConnectedLocations(actor.location);
@@ -1176,10 +1649,38 @@ function getRoomActions(actorId) {
     actions.push({ id: "takeSupply", label: `拿空投${items[roomBattle.supplyDrop.item].name}` });
   }
   const nearbyEnemies = roomBattle.players.filter((target) => isRoomEnemy(actor, target) && target.location === actor.location);
+  if (actor.inventory.sniper) {
+    roomBattle.players.filter((target) => isRoomEnemy(actor, target)).forEach((target) => actions.push({ id: "fireSniper", targetId: target.id, label: `狙击${target.name}（4 伤害）` }));
+  }
   if (actor.inventory.rocket) {
     roomBattle.players.filter((target) => isRoomEnemy(actor, target)).forEach((target) => {
       actions.push({ id: "fireRocket", targetId: target.id, label: `火箭轰击${target.name}` });
     });
+  }
+  if (actor.character === "overlord" && !actor.bossSkillUsed && nearbyEnemies.length) {
+    actions.push({ id: "bossSweep", label: "发动暴君横扫" });
+  }
+  const adjacentEnemies = roomBattle.players.filter((target) => isRoomEnemy(actor, target) && roomConnectedLocations(actor.location).includes(target.location));
+  if (actor.character === "overlord" && bossRoarCooldown(actor) === 0 && adjacentEnemies.length) {
+    actions.push({ id: "bossRoar", label: "发动威慑怒吼" });
+  }
+  if (actor.character === "stalker" && stalkerPounceCooldown(actor) === 0) {
+    adjacentEnemies.forEach((target) => actions.push({ id: "stalkerPounce", targetId: target.id, label: `追猎突袭${target.name}` }));
+  }
+  if (actor.character === "stalker" && !actor.stalkerHuntUsed) {
+    roomBattle.players.filter((target) => isRoomEnemy(actor, target)).forEach((target) => actions.push({ id: "stalkerHunt", targetId: target.id, label: `致命追猎${target.name}` }));
+  }
+  if (actor.character === "magician") {
+    if ((actor.cards || 0) >= 1 && magicianTeleportCooldown(actor) === 0) {
+      mapNodes.filter((to) => to !== actor.location).forEach((to) => actions.push({ id: "magicianTeleport", to, label: `瞬移到${roomLocationName(to)}（-1 卡，不耗行动）` }));
+    }
+    if ((actor.cards || 0) >= 1 && actor.hp < actor.maxHp && magicianHealCooldown(actor) === 0) {
+      const maxSpend = Math.min(actor.cards, actor.maxHp - actor.hp);
+      for (let cardCount = 1; cardCount <= maxSpend; cardCount += 1) actions.push({ id: "magicianHeal", cards: cardCount, label: `卡牌疗愈 ${cardCount} 点（-${cardCount} 卡）` });
+    }
+    if ((actor.cards || 0) >= 4 && !actor.magicianUltimateUsed) {
+      roomBattle.players.filter((target) => isRoomEnemy(actor, target)).forEach((target) => actions.push({ id: "magicianUltimate", targetId: target.id, label: `魔术终幕：轰击${target.name}（-4 卡）` }));
+    }
   }
   if (actor.character === "vanguard" && !actor.vanguardPulseUsed && !actor.vanguardPulseArmed) {
     actions.push({ id: "vanguardPulse", label: "启动震荡波" });
@@ -1204,6 +1705,7 @@ function runRoomAction(actorId, action) {
   const available = getRoomActions(actorId).some((item) => JSON.stringify(item) === JSON.stringify(action));
   if (!available) return;
 
+  const deadBefore = new Set(roomBattle.players.filter((player) => player.dead).map((player) => player.id));
   let entry = "";
   if (action.id === "wake") {
     actor.asleep = false;
@@ -1221,7 +1723,7 @@ function runRoomAction(actorId, action) {
     if (action.item === "shield") actor.inventory.shieldHp = 1;
     entry = `${actor.name} 拿到了 ${items[action.item].name}。`;
   } else if (action.id === "useMedkit") {
-    const restored = 1;
+    const restored = actor.character === "medic" ? 2 : 1;
     const before = actor.hp;
     actor.hp = Math.min(actor.maxHp, actor.hp + restored);
     actor.inventory.medkit -= 1;
@@ -1230,6 +1732,17 @@ function runRoomAction(actorId, action) {
     actor.inventory.smoke = false;
     actor.smoke = true;
     entry = `${actor.name} 释放了烟雾弹，下一次受到的攻击会落空。`;
+  } else if (action.id === "fireSniper") {
+    const target = getRoomPlayer(action.targetId);
+    if (!target || !actor.inventory.sniper || !isRoomEnemy(actor, target)) return;
+    actor.inventory.sniper = false;
+    const damage = target.boss ? 4 : target.hp;
+    target.hp = Math.max(0, target.hp - damage);
+    if (target.hp === 0) target.dead = true;
+    entry = target.boss && !target.dead
+      ? `${actor.name} 发射狙击枪命中 BOSS ${target.name}，造成 4 点伤害；BOSS 未被一枪射杀。`
+      : `${actor.name} 发射狙击枪击中了 ${target.name}，造成 ${damage} 点伤害${target.dead ? "并淘汰目标" : ""}。`;
+    triggerFeedback("attack", "狙击命中！", actor.id);
   } else if (action.id === "fireRocket") {
     const target = getRoomPlayer(action.targetId);
     if (!target || !isRoomEnemy(actor, target)) return;
@@ -1250,6 +1763,70 @@ function runRoomAction(actorId, action) {
     if (drop.item === "shield") actor.inventory.shieldHp = 1;
     drop.opened = true;
     entry = `${actor.name} 拿到了空投：${items[drop.item].name}。`;
+} else if (action.id === "bossSweep") {
+    if (!actor.boss || actor.bossSkillUsed) return;
+    const targets = roomBattle.players.filter((target) => isRoomEnemy(actor, target) && target.location === actor.location);
+    if (!targets.length) return;
+    actor.bossSkillUsed = true;
+    const results = targets.map((target) => {
+      if (target.smoke) { target.smoke = false; return `${target.name} 的烟雾挡住了横扫`; }
+      if (target.inventory.shield) { target.inventory.shield = false; target.inventory.shieldHp = 0; return `${target.name} 的盾挡住了横扫`; }
+      target.hp = Math.max(0, target.hp - 2);
+      if (target.hp === 0) target.dead = true;
+      triggerFeedback("hit", "BOSS 横扫命中！", target.id);
+      return `${target.name} 受到 2 点伤害${target.dead ? "并被淘汰" : ""}`;
+    });
+    entry = `${actor.name} 发动暴君横扫：${results.join("；")}。`;
+    triggerFeedback("attack", "暴君横扫！", actor.id);
+} else if (action.id === "bossRoar") {
+    if (!actor.boss || bossRoarCooldown(actor) > 0) return;
+    const targets = roomBattle.players.filter((target) => isRoomEnemy(actor, target) && roomConnectedLocations(actor.location).includes(target.location));
+    if (!targets.length) return;
+    actor.bossRoarReadyRound = roomBattle.round + 2;
+    const results = targets.map((target) => {
+      if (target.smoke) { target.smoke = false; return `${target.name} 的烟雾挡住了怒吼`; }
+      if (target.inventory.shield) { target.inventory.shield = false; target.inventory.shieldHp = 0; return `${target.name} 的盾挡住了怒吼`; }
+      target.hp = Math.max(0, target.hp - 1);
+      if (target.hp === 0) target.dead = true;
+      triggerFeedback("hit", "BOSS 怒吼命中！", target.id);
+      return `${target.name} 受到 1 点伤害${target.dead ? "并被淘汰" : ""}`;
+    });
+    entry = `${actor.name} 发动威慑怒吼：${results.join("；")}。`;
+    triggerFeedback("attack", "威慑怒吼！", actor.id);
+  } else if (action.id === "magicianTeleport") {
+    if (actor.character !== "magician" || (actor.cards || 0) < 1 || magicianTeleportCooldown(actor) > 0 || !roomMapConfig(roomBattle.mode).nodes[action.to]) return;
+    actor.cards -= 1;
+    actor.location = action.to;
+    actor.magicianTeleportReadyRound = roomBattle.round + 1;
+    entry = `${actor.name} 消耗 1 张卡牌瞬移到 ${roomLocationName(action.to)}，不消耗行动机会。`;
+    roomBattle.actionBroadcast = { title: "魔术师技能", text: entry };
+    roomAddLog(entry);
+    syncRoomBattle();
+    renderRoomBattle();
+    return;
+  } else if (action.id === "magicianHeal") {
+    const spend = Number(action.cards);
+    if (actor.character !== "magician" || !Number.isInteger(spend) || spend < 1 || spend > (actor.cards || 0) || magicianHealCooldown(actor) > 0 || actor.hp >= actor.maxHp) return;
+    const before = actor.hp;
+    actor.cards -= spend;
+    actor.hp = Math.min(actor.maxHp, actor.hp + spend);
+    actor.magicianHealReadyRound = roomBattle.round + 1;
+    entry = `${actor.name} 消耗 ${spend} 张卡牌疗愈，恢复 ${actor.hp - before} 点生命。`;
+    triggerFeedback("shield", "卡牌疗愈！", actor.id);
+  } else if (action.id === "magicianUltimate") {
+    const target = getRoomPlayer(action.targetId);
+    if (!target || actor.character !== "magician" || actor.magicianUltimateUsed || (actor.cards || 0) < 4 || !isRoomEnemy(actor, target)) return;
+    actor.cards -= 4;
+    actor.magicianUltimateUsed = true;
+    target.hp = Math.max(0, target.hp - 4);
+    if (target.hp === 0) target.dead = true;
+    actor.magicianExtraActionPending = 1;
+    actor.magicianSleepAfterExtra = true;
+    const extras = roomAlivePlayers().filter((player) => player.id !== actor.id).map((player) => player.id);
+    roomBattle.actionQueue.splice(1, 0, actor.id);
+    roomBattle.actionQueue.push(...extras);
+    entry = `${actor.name} 消耗 4 张卡牌发动魔术终幕，对 ${target.name} 造成 4 点伤害${target.dead ? "并淘汰目标" : ""}；获得一次额外行动，其余玩家也获得一次行动。随后魔术师将休眠一回合。`;
+    triggerFeedback("attack", "魔术终幕！", actor.id);
   } else if (action.id === "vanguardPulse") {
     if (actor.character !== "vanguard" || actor.vanguardPulseUsed) return;
     actor.vanguardPulseUsed = true;
@@ -1258,11 +1835,36 @@ function runRoomAction(actorId, action) {
     triggerFeedback("win", "震荡波已就绪！", actor.id);
   } else if (action.id === "medicHeal") {
     const target = getRoomPlayer(action.targetId);
-    if (!target || target.dead || actor.character !== "medic" || target.team !== actor.team || target.hp >= target.maxHp) return;
+    if (!target || target.dead || actor.character !== "medic" || actor.inventory.medkit <= 0 || actor.medicHealsRemaining <= 0 || target.team !== actor.team || target.hp >= target.maxHp) return;
     const before = target.hp;
-    target.hp = Math.min(target.maxHp, target.hp + 1);
+    target.hp = Math.min(target.maxHp, target.hp + 2);
+    actor.inventory.medkit -= 1;
+    actor.medicHealsRemaining -= 1;
     entry = `${actor.name} 远程急救 ${target.name}，恢复了 ${target.hp - before} 点生命。`;
     triggerFeedback("shield", "远程急救生效！", target.id);
+  } else if (action.id === "stalkerPounce") {
+    const target = getRoomPlayer(action.targetId);
+    if (!target || actor.character !== "stalker" || stalkerPounceCooldown(actor) > 0 || !roomConnectedLocations(actor.location).includes(target.location) || !isRoomEnemy(actor, target)) return;
+    actor.stalkerPounceReadyRound = roomBattle.round + 2;
+    actor.location = target.location;
+    const bonus = target.hp <= Math.ceil(target.maxHp / 2) ? 1 : 0;
+    target.hp = Math.max(0, target.hp - (2 + bonus));
+    if (target.hp === 0) target.dead = true;
+    entry = `${actor.name} 发动追猎突袭，跃入 ${roomLocationName(target.location)}，造成 ${2 + bonus} 点伤害${bonus ? "（猎杀本能 +1）" : ""}${target.dead ? "并淘汰目标" : ""}。`;
+    triggerFeedback("attack", "追猎突袭！", actor.id);
+  } else if (action.id === "stalkerHunt") {
+    const target = getRoomPlayer(action.targetId);
+    if (!target || actor.character !== "stalker" || actor.stalkerHuntUsed || !isRoomEnemy(actor, target)) return;
+    actor.stalkerHuntUsed = true;
+    actor.location = target.location;
+    const bonus = target.hp <= Math.ceil(target.maxHp / 2) ? 1 : 0;
+    target.smoke = false;
+    target.inventory.shield = false;
+    target.inventory.shieldHp = 0;
+    target.hp = Math.max(0, target.hp - (3 + bonus));
+    if (target.hp === 0) target.dead = true;
+    entry = `${actor.name} 发动致命追猎，无视距离锁定 ${target.name}，造成 ${3 + bonus} 点伤害${bonus ? "（猎杀本能 +1）" : ""}${target.dead ? "并淘汰目标" : ""}。`;
+    triggerFeedback("attack", "致命追猎！", actor.id);
   } else if (action.id === "attack") {
     const target = getRoomPlayer(action.targetId);
     if (!target || target.location !== actor.location || !isRoomEnemy(actor, target)) return;
@@ -1271,8 +1873,15 @@ function runRoomAction(actorId, action) {
     const resultFeedback = feedbackForRoomAttack(entry);
     triggerFeedback(resultFeedback.kind, resultFeedback.text, target.id);
   }
-  roomAddLog(entry);
-  finishRoomAction();
+  const newKills = roomBattle.players.filter((player) => player.dead && !deadBefore.has(player.id));
+  if (actor.character === "magician" && newKills.length) {
+    const gained = addMagicianCards(actor, newKills.length * 2);
+    if (gained) entry += ` 击杀奖励：获得 ${gained} 张卡牌（${actor.cards}/5）。`;
+  }
+  const narratedEntry = roomActionNarration(actor, entry);
+  roomBattle.actionBroadcast = { title: "行动播报", text: narratedEntry };
+  roomAddLog(narratedEntry);
+  showRoomActionReport(narratedEntry);
 }
 
 function chooseRoomBotAction(actorId) {
@@ -1286,6 +1895,8 @@ function chooseRoomBotAction(actorId) {
   });
   return (
     actions.find((action) => action.id === "wake") ||
+    actions.find((action) => action.id === "bossSweep") ||
+    actions.find((action) => action.id === "bossRoar") ||
     actions.find((action) => action.id === "medicHeal") ||
     actions.find((action) => action.id === "vanguardPulse") ||
     actions.find((action) => action.id === "fireRocket") ||
@@ -1303,7 +1914,7 @@ function chooseRoomBotAction(actorId) {
 }
 
 function maybeRunRoomBotTurn() {
-  if (!roomIsHost || !roomBattle || roomBattle.phase !== "action") return;
+  if (!roomIsHost || !roomBattle || roomBattle.phase !== "action" || roomDuelReveal) return;
   const actor = getRoomPlayer(roomBattle.currentActorId);
   if (!actor?.bot) return;
   setTimeout(() => {
@@ -1330,44 +1941,242 @@ function submitRoomThrow(choice) {
 function activateRoomSkill(skill) {
   const actor = getRoomPlayer(roomPlayerId);
   if (!actor || actor.dead || roomBattle?.currentActorId !== actor.id || roomBattle?.phase !== "action") return;
-  if (skill === "vanguard") {
-    const action = getRoomActions(actor.id).find((item) => item.id === "vanguardPulse");
-    if (action) runRoomAction(actor.id, action);
+  const actions = getRoomActions(actor.id);
+  if (skill === "medic") {
+    if (!actor.inventory.medkit || !actor.medicHealsRemaining || !actions.some((item) => item.id === "medicHeal")) return;
+    roomSkillTargeting = "medic";
+    roomBattle.message = "远程急救：点击一名受伤队友的角色卡";
+    renderRoomBattle();
     return;
   }
-  const healable = getRoomActions(actor.id).some((item) => item.id === "medicHeal");
-  if (!healable) return;
-  roomSkillTargeting = "medic";
-  roomBattle.message = "远程急救：点击一名受伤队友的角色卡";
-  renderRoomBattle();
+  const actionId = skill === "bossSweep" ? "bossSweep" : skill === "bossRoar" ? "bossRoar" : "vanguardPulse";
+  const action = actions.find((item) => item.id === actionId);
+  if (action) runRoomAction(actor.id, action);
 }
 
-function renderRoomSelfStatus() {
+function closeRoomSkillDialog() {
+  roomSkillMode = null;
+  roomHealAmount = 1;
+  if (els.roomSkillDialog) {
+    els.roomSkillDialog.classList.add("hidden");
+    els.roomSkillDialog.innerHTML = "";
+  }
+  if (roomBattle) renderRoomBattle();
+}
+
+function openMagicianHealDialog(player) {
+  const maxSpend = Math.min(player.cards || 0, player.maxHp - player.hp);
+  if (!els.roomSkillDialog || maxSpend < 1) return;
+  roomSkillMode = "magicianHeal";
+  roomHealAmount = Math.min(roomHealAmount, maxSpend);
+  els.roomSkillDialog.classList.remove("hidden");
+  els.roomSkillDialog.innerHTML = `<div class="skill-dialog-card"><strong>卡牌疗愈</strong><p>选择消耗卡牌数量，1 张卡回复 1 点生命。</p><div class="heal-counter"><button type="button" data-heal="minus">−</button><b data-heal-value>${roomHealAmount}</b><button type="button" data-heal="plus">＋</button></div><small>卡牌：${player.cards}/5 · 生命：${player.hp}/${player.maxHp}</small><div><button type="button" class="confirm-skill" data-heal="confirm">确认使用</button><button type="button" class="cancel-skill" data-heal="cancel">取消</button></div></div>`;
+  els.roomSkillDialog.querySelectorAll?.("[data-heal]").forEach((button) => button.addEventListener("click", () => {
+    const action = button.dataset.heal;
+    if (action === "minus") roomHealAmount = Math.max(1, roomHealAmount - 1);
+    if (action === "plus") roomHealAmount = Math.min(maxSpend, roomHealAmount + 1);
+    if (action === "cancel") return closeRoomSkillDialog();
+    if (action === "confirm") {
+      const healAction = getRoomActions(player.id).find((item) => item.id === "magicianHeal" && item.cards === roomHealAmount);
+      if (healAction) { closeRoomSkillDialog(); runRoomAction(player.id, healAction); }
+      return;
+    }
+    const value = els.roomSkillDialog.querySelector?.("[data-heal-value]");
+    if (value) value.textContent = String(roomHealAmount);
+  }));
+}
+
+function activateRoleSkill(skill) {
+  const player = getRoomPlayer(roomPlayerId);
+  if (!player || player.dead || player.asleep || roomBattle?.phase !== "action" || roomBattle.currentActorId !== player.id) return;
+  if (player.character === "magician") {
+    if (skill === "magicianTeleport") { roomSkillTargeting = null; roomSkillMode = "magicianTeleport"; roomBattle.message = "瞬移：点击地图上的目标地点"; renderRoomBattle(); return; }
+    if (skill === "magicianHeal") { openMagicianHealDialog(player); return; }
+    if (skill === "magicianUltimate") { roomSkillTargeting = null; roomSkillMode = "magicianUltimate"; roomBattle.message = "魔术终幕：点击一名生存者作为目标"; renderRoomBattle(); return; }
+  }
+  if (skill === "medic") { roomSkillMode = null; roomSkillTargeting = "medic"; roomBattle.message = "远程急救：点击一名受伤队友"; renderRoomBattle(); return; }
+  if (skill === "stalkerPounce" || skill === "stalkerHunt") { roomSkillTargeting = null; roomSkillMode = skill; roomBattle.message = `${skill === "stalkerPounce" ? "追猎突袭" : "致命追猎"}：点击一名可选目标`; renderRoomBattle(); return; }
+  const actions = getRoomActions(player.id);
+  const actionId = skill === "bossSweep" ? "bossSweep" : skill === "bossRoar" ? "bossRoar" : skill === "vanguardPulse" ? "vanguardPulse" : null;
+  const action = actionId ? actions.find((item) => item.id === actionId) : null;
+  if (action) runRoomAction(player.id, action);
+}
+
+function renderRoomSkillButtons() {
+  if (!roomBattle) return;
+  const player = getRoomPlayer(roomPlayerId);
+  if (!player) return;
+  const sidebarTarget = roomBattle.mode === "boss" ? els.roomSkillButtons : null;
+  const cardTarget = els.roomSelfStatus?.querySelector?.(".self-status-skills");
+  const target = sidebarTarget || cardTarget || els.roomSkillButtons;
+  if (!target) return;
+  if (els.roomSkillButtons && target !== els.roomSkillButtons) els.roomSkillButtons.innerHTML = "";
+  target.innerHTML = "";
+  const actions = getRoomActions(player.id);
+  const canAct = !player.dead && !player.asleep && roomBattle.phase === "action" && roomBattle.currentActorId === player.id;
+  const add = (label, skill, ready, description) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `room-skill-card${ready ? " ready" : " unavailable"}`;
+    button.setAttribute?.("aria-disabled", String(!ready));
+    button.textContent = label;
+    button.title = description;
+    button.dataset.tooltip = description;
+    button.addEventListener("click", () => { if (ready) activateRoleSkill(skill); });
+    target.appendChild(button);
+  };
+  if (player.character === "magician") {
+    add("主动技·瞬移", "magicianTeleport", canAct && (player.cards || 0) >= 1 && magicianTeleportCooldown(player) === 0, "消耗 1 张卡牌，点击地图任意其他地点瞬移；不消耗行动机会。");
+    add("主动技·卡牌疗愈", "magicianHeal", canAct && (player.cards || 0) >= 1 && player.hp < player.maxHp && magicianHealCooldown(player) === 0, "消耗任意张卡牌，回复等同于消耗卡牌数的生命；点击后用加减号选择数量。");
+    add("主动技·改写结果", "magicianRps", Boolean(roomBattle.magicianRpsOffer?.magicianId === player.id) && (player.cards || 0) >= 2, "猜拳结果揭晓后消耗 2 张卡牌，可以修改自己和其他玩家的出拳结果。");
+    add(player.magicianUltimateUsed ? "限定技·魔术终幕（已用）" : "限定技·魔术终幕", "magicianUltimate", canAct && !player.magicianUltimateUsed && (player.cards || 0) >= 4 && actions.some((item) => item.id === "magicianUltimate"), "消耗 4 张卡牌对一名玩家造成 4 点伤害并获得额外行动；之后休眠一回合，其他玩家各获得额外行动。");
+  } else if (player.character === "overlord") {
+    add(player.bossSkillUsed ? "限定技·暴君横扫（已用）" : "限定技·暴君横扫", "bossSweep", canAct && actions.some((item) => item.id === "bossSweep"), "对同地点所有生存者造成 2 点伤害；每局限用一次。");
+    add("主动技·威慑怒吼", "bossRoar", canAct && actions.some((item) => item.id === "bossRoar"), "对相邻地点所有生存者造成 1 点伤害，冷却 2 回合。");
+  } else if (player.character === "stalker") {
+    add("主动技·追猎突袭", "stalkerPounce", canAct && actions.some((item) => item.id === "stalkerPounce"), "点击相邻地点的目标，跃迁并造成 2 点伤害；半血目标额外受到 1 点。");
+    add(player.stalkerHuntUsed ? "限定技·致命追猎（已用）" : "限定技·致命追猎", "stalkerHunt", canAct && actions.some((item) => item.id === "stalkerHunt"), "无视距离锁定一名目标，清除烟雾和护盾并造成 3 点伤害；每局限用一次。");
+  } else if (player.character === "vanguard") {
+    add(player.vanguardPulseUsed ? "限定技·震荡波（已用）" : "限定技·震荡波", "vanguardPulse", canAct && actions.some((item) => item.id === "vanguardPulse"), "启动后在下一回合攻击相邻地区的所有敌人，造成 2 点伤害。");
+  } else if (player.character === "medic") {
+    add(`主动技·远程急救（${player.medicHealsRemaining || 0}/2）`, "medic", canAct && actions.some((item) => item.id === "medicHeal"), "点击一名受伤队友，为其回复 2 点生命并消耗 1 个医疗包。");
+  } else if (player.character === "scout") {
+    add("被动技·疾行", "scoutPassive", false, "移动时可以直接前往地图任意地点，无需沿连接线移动。");
+  } else if (player.character === "engineer") {
+    add("被动技·应急壁垒", "engineerPassive", false, "开局自带一面护盾，可抵挡一次攻击。");
+  }
+}function renderRoomSelfStatus() {
   if (!els.roomSelfStatus || !roomBattle) return;
   const player = getRoomPlayer(roomPlayerId);
   if (!player) return;
-  const character = characters[player.character] || characters.scout;
-  const portrait = `assets/characters/${player.character || "scout"}.png`;
-  els.roomSelfStatus.innerHTML = `<img class="self-status-portrait" src="${portrait}" alt="${character.name}" /><div class="self-status-main"><span>我的状态</span><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${roomRoleSkillLabel(player)}</small>${healthBarMarkup(player)}</div><div class="self-status-detail"><b>${roomLocationName(player.location)}</b><small>${player.dead ? "已淘汰" : player.asleep ? "睡觉中" : "已起床"}</small><div><i class="${player.inventory.knife ? "on" : ""}">刀</i><i class="${player.inventory.shield ? "on" : ""}">盾</i><i class="${player.inventory.sniper ? "on" : ""}">狙</i><i class="${player.inventory.medkit ? "on" : ""}">医${player.inventory.medkit}</i><i class="${player.inventory.smoke || player.smoke ? "on" : ""}">烟</i><i class="${player.inventory.rocket ? "on" : ""}">炮</i></div></div>`;
-  if (player.character === "vanguard" || player.character === "medic") {
-    const button = document.createElement("button");
-    button.className = "self-skill-button";
-    button.type = "button";
-    button.disabled = player.dead || player.asleep || roomBattle.phase !== "action" || roomBattle.currentActorId !== player.id || (player.character === "vanguard" && player.vanguardPulseUsed);
-    button.textContent = player.character === "vanguard" ? (player.vanguardPulseUsed ? "限定技已用" : "限定技：震荡波") : "主动技：远程急救";
-    button.addEventListener("click", () => activateRoomSkill(player.character));
-    els.roomSelfStatus.appendChild(button);
+  const character = player.character ? roleConfig(player.character) : { icon: "○", name: "未选择角色" };
+  const portrait = `assets/characters/${player.character || (player.boss ? "overlord" : "scout")}.png`;
+  if (roomBattle.mode === "boss" && !player.boss && els.roomBossStatus) {
+    els.roomSelfStatus.classList.remove("local-boss");
+    els.roomSelfStatus.innerHTML = "";
+    els.roomBossStatus.innerHTML = `<article class="operator-status-card${roomBattle.currentActorId === player.id ? " active-turn" : ""}"><img src="${portrait}" alt="${character.name}" /><div><span>操作者 · 生存者</span><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${player.dead ? "已淘汰" : player.asleep ? "睡眠中" : "已起床"}</small>${healthBarMarkup(player)}<small class="operator-location">${roomLocationName(player.location)}</small>${roomCompactInventory(player)}</div></article>`;
+    return;
   }
+  els.roomSelfStatus.classList.toggle("local-boss", Boolean(player.boss));
+  els.roomSelfStatus.innerHTML = `<img class="self-status-portrait" src="${portrait}" alt="${character.name}" /><div class="self-status-main"><span>操作角色</span><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${roomRoleSkillLabel(player)}</small>${healthBarMarkup(player)}</div><div class="self-status-detail"><b>${roomLocationName(player.location)}</b><small>${player.dead ? "已淘汰" : player.asleep ? "睡觉中" : "已起床"}</small><div><i class="${player.inventory.knife ? "on" : ""}">刀</i><i class="${player.inventory.shield ? "on" : ""}">盾</i><i class="${player.inventory.sniper ? "on" : ""}">狙</i><i class="${player.inventory.medkit ? "on" : ""}">医${player.inventory.medkit}</i><i class="${player.inventory.smoke || player.smoke ? "on" : ""}">烟</i><i class="${player.inventory.rocket ? "on" : ""}">炮</i></div></div><div class="self-status-skills" aria-label="角色技能"></div>`;
+}
+function roomCompactInventory(player) {
+  const inventory = player.inventory || {};
+  const chip = (label, active) => `<i class="team-item${active ? " on" : ""}">${label}</i>`;
+  return `<div class="team-inventory">${chip("刀", inventory.knife)}${chip("盾", inventory.shield)}${chip("狙", inventory.sniper)}${chip(`医${inventory.medkit || 0}`, inventory.medkit)}${chip("烟", inventory.smoke || player.smoke)}${chip("炮", inventory.rocket)}</div>`;
 }
 
+function roomBossSkillMarkup(player) {
+  if (!player.boss) return "";
+  if (player.character === "magician") {
+    const teleportCooldown = magicianTeleportCooldown(player);
+    const healCooldown = magicianHealCooldown(player);
+    return `<div class="team-boss-skills"><b>魔术师技能 · 卡牌 ${player.cards || 0}/5</b><span>主动技·瞬移：${teleportCooldown ? `冷却 ${teleportCooldown} 回合` : (player.cards || 0) >= 1 ? "可用" : "缺少卡牌"}</span><span>主动技·卡牌疗愈：${healCooldown ? `冷却 ${healCooldown} 回合` : (player.cards || 0) >= 1 ? "可用" : "缺少卡牌"}</span><span>主动技·改写结果：猜拳后消耗 2 卡</span><span>限定技·魔术终幕：${player.magicianUltimateUsed ? "已用" : (player.cards || 0) >= 4 ? "可用" : "需要 4 卡"}</span><span>被动：每两回合 +1 卡，击杀 +2 卡</span></div>`;
+  }
+  if (player.character === "stalker") {
+    const pounceCooldown = stalkerPounceCooldown(player);
+    return `<div class="team-boss-skills"><b>追猎者技能</b><span>主动技·追猎突袭：${pounceCooldown ? `冷却 ${pounceCooldown} 回合` : "可用"}</span><span>限定技·致命追猎：${player.stalkerHuntUsed ? "已用" : "可用"}</span><span>被动技·猎杀本能：半血目标增伤 1 点</span></div>`;
+  }
+  const roarCooldown = bossRoarCooldown(player);
+  return `<div class="team-boss-skills"><b>霸主技能</b><span>限定技·暴君横扫：${player.bossSkillUsed ? "已用" : "可用"}</span><span>主动技·威慑怒吼：${roarCooldown ? `冷却 ${roarCooldown} 回合` : "可用"}</span><span>被动技·霸主体魄：每轮回复 1 点生命</span></div>`;
+}
+function roomTargetedSkillAction(target) {
+  const actor = getRoomPlayer(roomPlayerId);
+  if (!actor || !target || actor.dead || roomBattle?.phase !== "action" || roomBattle.currentActorId !== actor.id) return null;
+  const skill = roomSkillTargeting === "medic" ? "medicHeal" : roomSkillMode;
+  if (!new Set(["medicHeal", "magicianUltimate", "stalkerPounce", "stalkerHunt"]).has(skill)) return null;
+  return getRoomActions(actor.id).find((action) => action.id === skill && action.targetId === target.id) || null;
+}
+
+function applyRoomSkillTargetCard(card, target) {
+  const action = roomTargetedSkillAction(target);
+  if (!action || !card) return false;
+  const labels = {
+    medicHeal: "远程急救：点击为该队友治疗",
+    magicianUltimate: "魔术终幕：点击锁定该生存者",
+    stalkerPounce: "追猎突袭：点击跃迁并攻击该目标",
+    stalkerHunt: "致命追猎：点击锁定该目标"
+  };
+  card.classList.add("skill-target", `skill-target-${action.id}`);
+  card.title = labels[action.id] || "点击使用技能";
+  card.addEventListener("click", () => {
+    roomSkillMode = null;
+    roomSkillTargeting = null;
+    runRoomAction(roomPlayerId, action);
+    if (!roomIsHost) renderRoomBattle();
+  });
+  return true;
+}
+function renderBattleTeamStatuses() {
+  if (!roomBattle || !els.roomTeamA || !els.roomTeamB) return;
+  const bossMode = roomBattle.mode === "boss";
+  const localPlayer = getRoomPlayer(roomPlayerId);
+  const survivorOperatorView = bossMode && Boolean(localPlayer) && !localPlayer.boss;
+  const strip = els.roomTeamA.parentElement?.parentElement;
+  if (strip) strip.classList.toggle("boss-roster", bossMode);
+  const leftTitle = els.roomTeamA.parentElement?.querySelector("strong");
+  const rightTitle = els.roomTeamB.parentElement?.querySelector("strong");
+  if (leftTitle) leftTitle.textContent = bossMode ? "BOSS" : "红队";
+  if (rightTitle) rightTitle.textContent = bossMode ? "生存者" : "蓝队";
+  els.roomTeamA.innerHTML = "";
+  els.roomTeamB.innerHTML = "";
+  if (els.roomBossStatus) els.roomBossStatus.innerHTML = "";
+  roomBattle.players
+    .filter((player) => !player.dead)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .forEach((player) => {
+      const character = player.character ? roleConfig(player.character) : { icon: "○", name: "未选择角色" };
+      const portrait = `assets/characters/${player.character || (player.boss ? "overlord" : "scout")}.png`;
+      const card = document.createElement("article");
+      card.className = `team-status-card${bossMode && player.boss ? " boss-card" : ""}${roomBattle.currentActorId === player.id ? " active-turn" : ""}`;
+      card.innerHTML = `<img src="${portrait}" alt="${character.name}" /><div><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${player.dead ? "已淘汰" : player.asleep ? "睡觉中" : "已起床"}</small>${bossMode && player.boss ? `<div class="boss-health"><span style="width:${Math.round((player.hp / player.maxHp) * 100)}%"></span></div><small>${player.hp}/${player.maxHp}</small>` : healthBarMarkup(player)}${roomCompactInventory(player)}</div>`;
+      const target = bossMode ? (player.boss ? (survivorOperatorView ? els.roomTeamA : (els.roomBossStatus || els.roomTeamA)) : els.roomTeamB) : (player.team === "A" ? els.roomTeamA : els.roomTeamB);
+      if (false && player.id === roomPlayerId && player.character === "overlord") {
+        const skillActions = document.createElement("div");
+        skillActions.className = "team-boss-actions";
+        const available = getRoomActions(player.id);
+        const canAct = !player.dead && !player.asleep && roomBattle.phase === "action" && roomBattle.currentActorId === player.id;
+        const roarCooldown = bossRoarCooldown(player);
+        [["bossSweep", "限定技：暴君横扫", player.bossSkillUsed], ["bossRoar", roarCooldown ? `主动技：威慑怒吼（冷却 ${roarCooldown}）` : "主动技：威慑怒吼", false]].forEach(([skill, label, used]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "self-skill-button";
+          const ready = !used && canAct && available.some((action) => action.id === skill);
+          button.disabled = !ready;
+          button.classList.toggle("ready", ready);
+          button.textContent = used ? `${label}（已用）` : label;
+          button.addEventListener("click", () => activateRoomSkill(skill));
+          skillActions.appendChild(button);
+        });
+        card.appendChild(skillActions);
+      }
+      applyRoomSkillTargetCard(card, player);
+      target.appendChild?.(card);
+
+    });
+}
 function renderRoomBattle() {
   if (!roomBattle) return;
   ensureRoomPlayerId();
+  els.roomBattlePanel?.classList?.toggle("boss-layout", roomBattle.mode === "boss");
+  const localBattlePlayer = getRoomPlayer(roomPlayerId);
+  els.roomBattlePanel?.classList?.toggle("local-survivor", roomBattle.mode === "boss" && Boolean(localBattlePlayer) && !localBattlePlayer.boss);
   setRoomBattleVisible(true);
-  renderRoomSelfStatus();
-  renderRoomMap();
+  if (roomBattle.phase === "action" && roomBattle.lastThrows && !roomDuelReveal && roomDuelRevealRound !== roomBattle.round) startRoomDuelReveal("win");
+  if (roomBattle.phase === "duel" && roomBattle.duelOutcome === "tie" && !roomDuelReveal && roomDuelRevealRound !== roomBattle.round) startRoomDuelReveal("tie");
+  const isDuelPhase = (["duel", "magicianChoice"].includes(roomBattle.phase) && !roomBattle.gameOver) || Boolean(roomDuelReveal) || Boolean(roomBattle.actionReport);
+  setRoomDuelVisible(isDuelPhase);
   renderRoomLobby();
-  if (els.roomBattleStatus) els.roomBattleStatus.textContent = roomBattle.message;
+  renderRoomResult();
+  renderRoomActionBulletin();
+  if (isDuelPhase) {
+    if (roomBattle.actionReport) renderRoomActionReport();
+    else renderRoomDuelScreen();
+    return;
+  }
+  renderBattleTeamStatuses();
+  renderRoomSelfStatus();
+  renderRoomMap();  if (els.roomBattleStatus) els.roomBattleStatus.textContent = roomBattle.message;
   if (els.roomMetrics) {
     const alive = roomAlivePlayers().length;
     const drop = roomBattle.supplyDrop && !roomBattle.supplyDrop.opened
@@ -1388,10 +2197,12 @@ function renderRoomBattle() {
       els.roomThrowButtons.appendChild(button);
     });
   }
+  renderRoomSkillButtons();
   if (els.roomActionButtons) {
     els.roomActionButtons.innerHTML = "";
     const localActor = getRoomPlayer(roomPlayerId);
-    const actions = getRoomActions(roomPlayerId).filter((action) => !["vanguardPulse", "medicHeal"].includes(action.id) && !(localActor?.character === "scout" && action.id === "move"));
+    const skillIds = new Set(["bossSweep", "bossRoar", "stalkerPounce", "stalkerHunt", "magicianTeleport", "magicianHeal", "magicianRps", "magicianUltimate", "vanguardPulse", "medicHeal"]);
+    const actions = getRoomActions(roomPlayerId).filter((action) => !skillIds.has(action.id) && !(localActor?.character === "scout" && action.id === "move"));
     if (!actions.length) {
       const disabled = document.createElement("button");
       disabled.className = "room-action-button";
@@ -1408,8 +2219,7 @@ function renderRoomBattle() {
         els.roomActionButtons.appendChild(button);
       });
     }
-  }
-  if (els.roomBattleLog) {
+  }  if (els.roomBattleLog) {
     els.roomBattleLog.innerHTML = "";
     roomBattle.log.forEach((entry) => {
       const item = document.createElement("li");
@@ -1430,9 +2240,10 @@ function edgeClass(from, to) {
 
 function renderRoomMap() {
   if (!els.roomMap) return;
-  const config = roomMapConfigs[roomMode];
+  const config = roomMapConfig(roomBattle?.mode || roomMode);
   els.roomMap.innerHTML = "";
-  els.roomMap.className = `battle-map-layout ${roomMode}-map`;
+  const activeMode = roomBattle?.mode || roomMode;
+  els.roomMap.className = `battle-map-layout ${activeMode}-map${roomSkillMode === "magicianTeleport" ? " teleport-targeting" : ""}`;
   if (els.roomMapLinks) els.roomMapLinks.innerHTML = "";
 
   const lines = document.createElement("div");
@@ -1450,6 +2261,17 @@ function renderRoomMap() {
     card.className = `room-map-node ${node.className} pos-${node.pos}`;
     card.dataset.node = id;
     const localActor = getRoomPlayer(roomPlayerId);
+    if (roomSkillMode === "magicianTeleport" && localActor?.character === "magician") {
+      card.classList.add("skill-target", "teleport-highlight");
+      const teleportAction = getRoomActions(roomPlayerId).find((action) => action.id === "magicianTeleport" && action.to === id);
+      if (teleportAction) {
+        card.title = `点击瞬移到${node.name}`;
+        card.addEventListener("click", () => { closeRoomSkillDialog(); runRoomAction(roomPlayerId, teleportAction); });
+      } else {
+        card.classList.add("current-teleport-location");
+        card.title = "当前位置";
+      }
+    }
     const directMove = localActor?.character === "scout"
       ? getRoomActions(roomPlayerId).find((action) => action.id === "move" && action.to === id)
       : null;
@@ -1461,7 +2283,9 @@ function renderRoomMap() {
         if (event.key === "Enter" || event.key === " ") runRoomAction(roomPlayerId, directMove);
       });
     }
-    card.innerHTML = `<strong>${node.name}</strong>`;
+    const teamHome = id === "redHome" ? "red" : id === "blueHome" ? "blue" : null;
+    if (card.setAttribute) card.setAttribute("aria-label", node.name);
+    card.innerHTML = teamHome ? `<span class="map-team-box ${teamHome}" aria-hidden="true"></span><strong>${node.name}</strong>` : `<strong>${node.name}</strong>`;
     if (roomBattle?.supplyDrop && !roomBattle.supplyDrop.opened && roomBattle.supplyDrop.location === id) {
       const drop = document.createElement("span");
       drop.className = "supply-marker";
@@ -1487,20 +2311,26 @@ function renderRoomLobby() {
   renderRoomMap();
   if (!els.roomSlots) return;
   els.roomSlots.innerHTML = "";
-  const players = roomBattle?.players || roomState?.players || [];
+  const activeBattle = roomState?.started ? roomBattle : null;
+  const players = activeBattle?.players || roomState?.players || [];
   const max = roomState?.maxPlayers || roomCapacity();
-  for (let index = 0; index < max; index += 1) {
-    const player = players[index];
+  // Your detailed state stays in the dedicated top panel during battle.
+  const visiblePlayers = activeBattle ? players.filter((player) => player.id !== roomPlayerId).sort((a, b) => String(a.team || "Z").localeCompare(String(b.team || "Z"))) : players;
+  const slotCount = activeBattle ? visiblePlayers.length : max;
+  for (let index = 0; index < slotCount; index += 1) {
+    const player = visiblePlayers[index];
     const slot = document.createElement("article");
     const teamClass = player?.team === "A" ? "team-a" : player?.team === "B" ? "team-b" : "";
     const wonRound = Boolean(roomBattle?.phase === "action" && player && roomBattle.actionQueue.includes(player.id));
     slot.className = `slot-card ${player ? teamClass : "empty"}${player?.dead ? " dead" : ""}${wonRound ? " round-winner" : ""}${roomBattle?.currentActorId === player?.id ? " active-turn" : ""}`;
     if (player) slot.dataset.playerId = player.id;
     if (player) {
-      const team = (roomBattle?.mode || roomState?.mode) === "team" ? (player.team === "A" ? "红队" : "蓝队") : "乱战";
-      const character = characters[player.character] || characters.scout;
-      if (roomBattle) {
-        slot.innerHTML = `<div class="slot-throw ${roomThrowClass(player)}">${roomThrowBadge(player)}</div><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${roomRoleSkillLabel(player)} · ${team} · ${player.bot ? "人机" : player.role === "host" ? "房主" : "玩家"} · ${player.dead ? "死亡" : player.asleep ? "睡觉中" : "已起床"}</small><div class="slot-stats"><span class="slot-chip hp-chip">${healthBarMarkup(player)}</span><span class="slot-chip">${roomLocationName(player.location)}</span><span class="slot-chip ${player.inventory.knife ? "on" : ""}">刀</span><span class="slot-chip ${player.inventory.shield ? "on" : ""}">盾</span><span class="slot-chip ${player.inventory.sniper ? "on" : ""}">狙</span><span class="slot-chip ${player.inventory.medkit ? "on" : ""}">医</span><span class="slot-chip ${player.inventory.smoke || player.smoke ? "on" : ""}">烟</span><span class="slot-chip ${player.inventory.rocket ? "on" : ""}">炮</span></div>`;
+      const activeMode = roomBattle?.mode || roomState?.mode;
+      const team = activeMode === "team" ? (player.team === "A" ? "红队" : "蓝队") : activeMode === "boss" ? (player.boss ? "BOSS" : "生存者") : "乱战";
+      const character = player.character ? roleConfig(player.character) : { icon: "○", name: "未选择角色" };
+      if (activeBattle) {
+        const portrait = `assets/characters/${player.character || (player.boss ? "overlord" : "scout")}.png`;
+        slot.innerHTML = `<img class="slot-portrait" src="${portrait}" alt="${character.name}" /><div class="slot-card-content"><span class="slot-team-badge ${teamClass || "free-for-all"}">${team}</span><div class="slot-throw ${roomThrowClass(player)}">${roomThrowBadge(player)}</div><strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${roomRoleSkillLabel(player)} · ${team} · ${player.bot ? "人机" : player.role === "host" ? "房主" : "玩家"} · ${player.dead ? "死亡" : player.asleep ? "睡觉中" : "已起床"}</small><div class="slot-stats"><span class="slot-chip hp-chip">${healthBarMarkup(player)}</span><span class="slot-chip">${roomLocationName(player.location)}</span><span class="slot-chip ${player.inventory.knife ? "on" : ""}">刀</span><span class="slot-chip ${player.inventory.shield ? "on" : ""}">盾</span><span class="slot-chip ${player.inventory.sniper ? "on" : ""}">狙</span><span class="slot-chip ${player.inventory.medkit ? "on" : ""}">医</span><span class="slot-chip ${player.inventory.smoke || player.smoke ? "on" : ""}">烟</span><span class="slot-chip ${player.inventory.rocket ? "on" : ""}">炮</span></div></div>`;
       } else {
         slot.innerHTML = `<strong>${roomPlayerLabel(player)}</strong><small>${character.icon} ${character.name} · ${team} · ${player.bot ? "人机" : player.role === "host" ? "房主" : "玩家"}</small>`;
         if (player.bot && roomIsHost) {
@@ -1512,6 +2342,22 @@ function renderRoomLobby() {
           if (remove.setAttribute) remove.setAttribute("aria-label", `删除${player.name}`);
           remove.addEventListener("click", () => removeRoomBot(player.id));
           slot.appendChild(remove);
+        }        if (!activeBattle && roomIsHost && (activeMode === "boss" || activeMode === "team")) {
+          const assignment = document.createElement("select");
+          assignment.className = "slot-assignment";
+          assignment.setAttribute("aria-label", `设置 ${player.name} 的身份`);
+          const choices = activeMode === "boss"
+            ? [{ value: "survivor", label: "生存者" }, { value: "boss", label: "BOSS" }]
+            : [{ value: "A", label: "红队" }, { value: "B", label: "蓝队" }];
+          choices.forEach((choice) => {
+            const option = document.createElement("option");
+            option.value = choice.value;
+            option.textContent = choice.label;
+            assignment.appendChild(option);
+          });
+          assignment.value = activeMode === "boss" ? (player.boss ? "boss" : "survivor") : player.team || "A";
+          assignment.addEventListener("change", () => assignRoomPlayer(player.id, assignment.value));
+          slot.appendChild(assignment);
         }
       }
     } else {
@@ -1541,7 +2387,8 @@ function fallbackRoom(code, playerId = roomPlayerId) {
         id: playerId || "local-host",
         name: roomIsHost ? "房主" : "玩家 1",
         role: roomIsHost ? "host" : "guest",
-        team: roomMode === "team" ? "A" : null,
+        team: roomMode === "team" ? "A" : roomMode === "boss" ? "A" : null,
+        boss: false,
         bot: false,
         connected: true,
       },
@@ -1620,19 +2467,24 @@ function syncStateToGuest() {
 }
 
 function closePeer() {
-  if (channel) channel.close();
+  const activeChannel = channel;
   channel = null;
   peer = null;
   pendingThrows = {};
+  if (activeChannel) {
+    activeChannel.onmessage = null;
+    activeChannel.onclose = null;
+    activeChannel.onerror = null;
+    activeChannel.close();
+  }
 }
 
 function attachRoomSocket(socket) {
   channel = socket;
-  channel.onmessage = (event) => handleNetworkMessage(JSON.parse(event.data));
-  channel.onclose = () => (gameMode === "room" ? setRoomStatus("房间连接断开") : setOnlineStatus("联机断开"));
-  channel.onerror = () => (gameMode === "room" ? setRoomStatus("连接房间服务器失败") : setOnlineStatus("连接房间服务器失败"));
+  socket.onmessage = (event) => { if (channel === socket) handleNetworkMessage(JSON.parse(event.data)); };
+  socket.onclose = () => { if (channel === socket) (gameMode === "room" ? setRoomStatus("房间连接断开") : setOnlineStatus("联机断开")); };
+  socket.onerror = () => { if (channel === socket) (gameMode === "room" ? setRoomStatus("连接房间服务器失败") : setOnlineStatus("连接房间服务器失败")); };
 }
-
 function openRoomSocket() {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(roomServerUrl());
@@ -1668,7 +2520,7 @@ async function joinRoom() {
   state = initialState();
   applyOnlineActorNames();
   await openRoomSocket();
-  sendNetwork({ type: "joinRoom", code, character: selectedCharacter });
+  sendNetwork({ type: "joinRoom", code });
   setOnlineStatus(`正在加入房间 ${code}...`);
   render();
 }
@@ -1727,6 +2579,29 @@ function handleNetworkMessage(message) {
     return;
   }
 
+  if (gameMode === "room" && message.type === "roomCharacterSelection") {
+    applyRoomState(message.room);
+    selectedMode = roomMode;
+    const player = message.room.players.find((entry) => entry.id === roomPlayerId);
+    selectedCharacter = player && player.boss ? (bosses[player.character] ? player.character : "overlord") : "scout";
+    if (els.characterModeLabel) els.characterModeLabel.textContent = roomModeName();
+    if (els.characterTitle) els.characterTitle.textContent = "选择你的角色";
+    if (els.characterHint) els.characterHint.textContent = player && player.boss ? "你是 BOSS，可以选择霸主或追猎者。" : "选择角色并确认，等待其他玩家准备。";
+    if (els.characterStartBtn) { els.characterStartBtn.disabled = false; els.characterStartBtn.textContent = "确认角色"; }
+    renderCharacterPicker();
+    showScreen("character");
+    return;
+  }
+
+  if (gameMode === "room" && message.type === "roomCharactersReady") {
+    applyRoomState(message.room);
+    if (roomIsHost) {
+      roomBattle = createRoomBattle(message.room);
+      sendNetwork({ type: "startRoom", battle: roomBattle });
+    }
+    return;
+  }
+
   if (gameMode === "room" && message.type === "roomStarted") {
     roomBattle = message.battle || createRoomBattle(message.room);
     applyRoomState(message.room);
@@ -1735,6 +2610,15 @@ function handleNetworkMessage(message) {
     return;
   }
 
+  if (gameMode === "room" && message.type === "roomReturnedToLobby") {
+    roomBattle = null;
+    roomSkillTargeting = null;
+    setRoomBattleLogVisible(false);
+    els.roomBattlePanel?.classList?.remove("log-open");
+    applyRoomState(message.room);
+    setRoomStatus("战斗结束，已返回原房间。房主可直接开始下一局。");
+    return;
+  }
   if (gameMode === "room" && message.type === "roomBattleState") {
     roomBattle = message.battle;
     renderRoomBattle();
@@ -1748,6 +2632,11 @@ function handleNetworkMessage(message) {
       syncRoomBattle();
       renderRoomBattle();
     }
+    return;
+  }
+
+  if (gameMode === "room" && message.type === "magicianRpsChoice") {
+    if (roomIsHost && roomBattle?.magicianRpsOffer?.magicianId === message.actorId) resolveMagicianRpsChoice(Boolean(message.useSkill), message.edits || {});
     return;
   }
 
@@ -2265,12 +3154,13 @@ els.throwButtons.forEach((button) => {
 els.startGameBtn.addEventListener("click", () => showScreen("mode"));
 els.modeBackBtn.addEventListener("click", () => showScreen("start"));
 els.characterButtons.forEach((button) => button.addEventListener("click", () => {
-  selectedCharacter = characters[button.dataset.character] ? button.dataset.character : "scout";
+  selectedCharacter = roleConfig(button.dataset.character) ? button.dataset.character : "scout";
   if (gameMode === "room" && roomState && !roomState.started) sendNetwork({ type: "setCharacter", character: selectedCharacter });
   renderCharacterPicker();
 }));
-els.singleModeBtn.addEventListener("click", () => openCharacterSelect("single").catch((error) => setRoomStatus(`创建房间失败：${error.message}`)));
-els.teamModeBtn.addEventListener("click", () => openCharacterSelect("team").catch((error) => setRoomStatus(`创建房间失败：${error.message}`)));
+els.singleModeBtn.addEventListener("click", startSingleMode);
+els.teamModeBtn.addEventListener("click", () => enterRoomMode("team").catch((error) => setRoomStatus(`创建房间失败：${error.message}`)));
+els.bossModeBtn?.addEventListener("click", () => enterRoomMode("boss").catch((error) => setRoomStatus(`创建房间失败：${error.message}`)));
 els.chaosModeBtn?.addEventListener("click", () => openCharacterSelect("chaos").catch((error) => setRoomStatus(`创建房间失败：${error.message}`)));
 els.characterBackBtn.addEventListener("click", () => showScreen("mode"));
 els.characterStartBtn.addEventListener("click", startSelectedMode);
@@ -2290,7 +3180,12 @@ els.roomCreateBtn?.addEventListener("click", () => createModeRoom().catch((error
 els.roomJoinBtn.addEventListener("click", () => joinModeRoom().catch((error) => setRoomStatus(`加入失败：${error.message}`)));
 els.roomCopyBtn.addEventListener("click", () => copyModeRoomCode());
 els.roomAddBotBtn.addEventListener("click", addRoomBot);
-els.roomStartBtn.addEventListener("click", startModeRoom);els.playerCard.addEventListener("click", () => handleTargetCardClick(localSideIds().left));
+els.roomStartBtn.addEventListener("click", startModeRoom);
+els.roomReturnLobbyBtn?.addEventListener("click", returnRoomToLobby);
+els.battleLogHeaderBtn?.addEventListener("click", () => setRoomBattleLogVisible(true));
+els.battleLogCloseBtn?.addEventListener("click", () => setRoomBattleLogVisible(false));
+els.battleLogDialog?.addEventListener("click", (event) => { if (event.target === els.battleLogDialog) setRoomBattleLogVisible(false); });
+els.playerCard.addEventListener("click", () => handleTargetCardClick(localSideIds().left));
 els.computerCard.addEventListener("click", () => handleTargetCardClick(localSideIds().right));
 els.hostBtn.addEventListener("click", () => createRoom().catch((error) => setOnlineStatus(`创建失败：${error.message}`)));
 els.joinBtn.addEventListener("click", () => joinRoom().catch((error) => setOnlineStatus(`加入失败：${error.message}`)));

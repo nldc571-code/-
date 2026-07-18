@@ -30,6 +30,7 @@ body {
 
 button { font: inherit; }
 .hidden { display: none !important; }
+.character-card.hidden { display: none !important; }
 
 .screen,
 .room-shell {
@@ -316,7 +317,19 @@ h2 { font-size: 18px; }
 .room-throw-button.selected,
 .room-action-button.primary { border-color: var(--yellow); background: rgba(224, 184, 79, 0.18); }
 .room-throw-button:disabled,
-.room-action-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.room-action-button:disabled { opacity: 0.45; cursor: not-allowed; }.room-action-button.character-skill {
+  position: relative;
+  min-width: 170px;
+  border: 1px solid #c99a32;
+  background: linear-gradient(180deg, #493d25 0%, #242016 100%);
+  color: #fff2c0;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 0 0 1px rgba(255, 220, 126, 0.14), 0 4px 12px rgba(0, 0, 0, 0.34);
+}
+.room-action-button.character-skill::before { content: "技"; display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 8px; border-radius: 50%; background: #b2731f; color: #fff8db; font-family: serif; }
+.room-action-button.character-skill:hover:not(:disabled) { border-color: #ffe08a; background: linear-gradient(180deg, #72572a 0%, #332714 100%); box-shadow: 0 0 18px rgba(238, 188, 73, 0.35), inset 0 0 0 1px rgba(255, 231, 163, 0.24); transform: translateY(-1px); }
+.room-action-button.character-skill:disabled { filter: grayscale(0.7); }
 .room-battle-log { display: grid; gap: 6px; max-height: 150px; margin: 0; padding-left: 20px; overflow: auto; color: var(--muted); line-height: 1.45; }
 .slot-card.dead { opacity: 0.45; border-color: rgba(224, 91, 79, 0.72); }
 .slot-card.active-turn { box-shadow: inset 0 0 0 2px rgba(224, 184, 79, 0.35); }
@@ -452,7 +465,9 @@ h2 { font-size: 18px; }
   .arena, .log-panel { display: flex; flex-direction: column; overflow: visible; padding: 10px; }
   .map-grid, .actions { height: auto; max-height: none; overflow: visible; }
   .duel-panel { order: -1; }
-  .throw-button, .action-button { min-height: 72px; }`r`n  .character-card { min-height: 320px; }`r`n  .character-footer { align-items: stretch; flex-direction: column; }
+  .throw-button, .action-button { min-height: 72px; }
+  .character-card { min-height: 320px; }
+  .character-footer { align-items: stretch; flex-direction: column; }
   .throws { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .feedback-layer { left: 10px; right: 10px; bottom: 10px; }
 }
@@ -616,7 +631,7 @@ h2 { font-size: 18px; }
 .room-map-node.reachable:hover { transform: translateY(-2px); background: rgba(44, 78, 102, 0.38); }
 
 .slot-card { position: relative; }
-.bot-remove { position: absolute; top: 7px; left: 7px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid rgba(224, 91, 79, 0.72); background: rgba(62, 24, 24, 0.94); color: #ffb3aa; font-size: 18px; line-height: 1; cursor: pointer; z-index: 3; }
+.bot-remove { position: absolute; top: 7px; right: 7px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid rgba(224, 91, 79, 0.72); background: rgba(62, 24, 24, 0.94); color: #ffb3aa; font-size: 18px; line-height: 1; cursor: pointer; z-index: 3; }
 .bot-remove:hover { background: var(--red); color: #fff; }
 
 @media (max-width: 700px) {
@@ -736,4 +751,743 @@ h2 { font-size: 18px; }
   .room-shell.battle-active .slot-grid { margin-top: 4px; }
   .room-shell.battle-active .slot-card { min-height: 54px; padding: 6px; }
   .room-shell.battle-active .slot-card small { max-height: 32px; overflow: hidden; line-height: 1.3; }
+}
+/* Battle controls stay large; the combat log expands from a right-side drawer. */
+.battle-controls { display: grid; gap: 10px; }
+.battle-log-tab { display: none; }
+@media (min-width: 1061px) {
+  .room-shell.battle-active .room-battle-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 26px 76px minmax(174px, 1fr) 54px;
+    grid-template-areas: "title" "self" "map" "controls";
+    position: relative;
+    overflow: hidden;
+  }
+  .room-shell.battle-active .battle-controls {
+    grid-area: controls;
+    grid-template-columns: minmax(360px, 1.25fr) minmax(240px, 0.75fr);
+    align-items: stretch;
+  }
+  /* These are children of .battle-controls, not the battle panel. Reset the
+     older named areas so they do not create implicit tracks off-screen. */
+  .room-shell.battle-active .battle-controls > .room-throws,
+  .room-shell.battle-active .battle-controls > .room-actions { grid-area: auto; }
+  .room-shell.battle-active .room-throws {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .room-shell.battle-active .room-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .room-shell.battle-active .room-throw-button {
+    min-height: 54px;
+    padding: 8px 12px;
+    font-size: 17px;
+    font-weight: 900;
+  }
+  .room-shell.battle-active .room-action-button {
+    min-height: 54px;
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .room-shell.battle-active .room-battle-log {
+    grid-area: auto;
+    position: absolute;
+    inset: 8px 0 8px auto;
+    width: min(360px, 82%);
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    z-index: 4;
+    margin: 0;
+    padding: 14px 14px 14px 34px;
+    border: 1px solid rgba(224, 184, 79, 0.65);
+    background: rgba(17, 21, 26, 0.98);
+    box-shadow: -18px 0 38px rgba(0, 0, 0, 0.36);
+    transform: translateX(calc(100% - 42px));
+    transition: transform 180ms ease;
+  }
+  .room-shell.battle-active .room-battle-panel.log-open .room-battle-log { transform: translateX(0); }
+  .room-shell.battle-active .battle-log-tab {
+    position: absolute;
+    z-index: 5;
+    top: 50%;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    min-height: 118px;
+    padding: 8px 9px;
+    border: 1px solid rgba(224, 184, 79, 0.72);
+    border-right: 0;
+    background: #20242b;
+    color: #ffe2a0;
+    cursor: pointer;
+    font-weight: 900;
+    writing-mode: vertical-rl;
+    transform: translateY(-50%);
+  }
+  .room-shell.battle-active .room-battle-panel.log-open .battle-log-tab { background: var(--yellow); color: var(--ink); }
+}
+@media (max-width: 1060px) {
+  .room-shell.battle-active .room-battle-panel {
+    grid-template-areas: "title" "self" "map" "controls" "log";
+  }
+  .room-shell.battle-active .battle-controls { grid-area: controls; }
+  .room-shell.battle-active .battle-log-tab { display: none; }
+}
+@media (max-width: 700px) {
+  .battle-controls { grid-template-columns: 1fr; }
+  .room-shell.battle-active .room-throws { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .room-shell.battle-active .room-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+}
+.room-result-overlay {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: rgba(10, 12, 15, 0.88);
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+.room-result-overlay strong { color: #a7e5c5; font-size: clamp(48px, 8vw, 96px); line-height: 1; letter-spacing: 0; }
+.room-result-overlay strong.lose { color: #ffaaa1; }
+.room-result-overlay p { margin: 0; color: var(--text); font-size: 19px; font-weight: 800; }
+.room-result-overlay .primary-button { justify-self: center; min-height: 46px; min-width: 160px; }
+@media (max-width: 700px) {
+  .room-result-overlay { position: fixed; inset: 0; }
+  .room-result-overlay strong { font-size: 64px; }
+}
+.self-skill-button.ready { border-color: #7bd99e; background: rgba(51, 167, 98, 0.18); color: #c9f7d8; box-shadow: 0 0 18px rgba(123, 217, 158, 0.2); }
+
+/* Full battle-round transition: choose a throw before returning to the map. */
+.room-duel-screen {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 28px;
+  border: 1px solid rgba(224, 184, 79, 0.72);
+  background: radial-gradient(circle at 50% 46%, rgba(224, 184, 79, 0.17), transparent 30%), linear-gradient(145deg, #111824, #181b20 54%, #101319);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  text-align: center;
+}
+.room-shell.battle-active .room-duel-screen { min-height: 0; }
+.duel-kicker { color: #ffe2a0; font-size: 13px; font-weight: 900; letter-spacing: 0.08em; }
+.room-duel-screen h2 { margin: 0; font-size: clamp(34px, 5vw, 64px); }
+.duel-prompt { min-height: 24px; margin: 0; color: var(--muted); font-size: 16px; }
+.duel-stage { display: grid; grid-template-columns: minmax(120px, 180px) 58px minmax(120px, 180px); align-items: center; gap: 18px; margin: 6px 0; }
+.duel-fighter { display: grid; place-items: center; gap: 8px; min-height: 150px; padding: 14px; border: 1px solid var(--line); background: rgba(8, 10, 13, 0.46); }
+.duel-fighter span { color: var(--muted); font-weight: 800; }
+.duel-fighter b { font-size: 76px; line-height: 1; }
+.duel-fighter-you { border-color: rgba(79, 147, 224, 0.8); }
+.duel-fighter-opponent { border-color: rgba(224, 91, 79, 0.8); }
+.duel-versus { color: #ffe2a0; font-size: 24px; font-weight: 900; font-style: italic; }
+.duel-stage.is-animating .duel-fighter-you { animation: duelPunchLeft 800ms ease-in-out both; }
+.duel-stage.is-animating .duel-fighter-opponent { animation: duelPunchRight 800ms ease-in-out both; }
+.duel-choice-buttons { display: grid; grid-template-columns: repeat(3, minmax(100px, 150px)); gap: 10px; }
+.duel-choice-button { display: grid; place-items: center; gap: 4px; min-height: 86px; border: 1px solid rgba(224, 184, 79, 0.62); background: rgba(224, 184, 79, 0.08); color: var(--text); cursor: pointer; font-weight: 900; }
+.duel-choice-button strong { font-size: 36px; line-height: 1; }
+.duel-choice-button:hover:not(:disabled) { transform: translateY(-3px) scale(1.03); border-color: var(--yellow); background: rgba(224, 184, 79, 0.22); }
+.duel-choice-button:disabled { opacity: 0.45; cursor: wait; }
+@keyframes duelPunchLeft { 0%, 100% { transform: translateX(0) rotate(0); } 45% { transform: translateX(82px) rotate(14deg) scale(1.12); } }
+@keyframes duelPunchRight { 0%, 100% { transform: translateX(0) rotate(0); } 45% { transform: translateX(-82px) rotate(-14deg) scale(1.12); } }
+@media (max-width: 700px) { .room-duel-screen { padding: 18px 10px; } .duel-stage { grid-template-columns: minmax(92px, 1fr) 34px minmax(92px, 1fr); gap: 8px; } .duel-fighter { min-height: 122px; } .duel-fighter b { font-size: 58px; } .duel-choice-buttons { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); } .duel-choice-button { min-height: 76px; } }
+/* Multi-player duel overlay: the map remains the translucent backdrop. */
+.room-shell.duel-active .room-battle-panel { filter: saturate(0.72) brightness(0.62); pointer-events: none; }
+.room-duel-screen {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  min-height: 100vh !important;
+  padding: 40px 24px;
+  background: rgba(8, 11, 16, 0.72);
+  backdrop-filter: blur(2px);
+}
+.room-shell.duel-active .self-status-panel { visibility: hidden; }
+.duel-player-stage {
+  width: min(940px, 94vw);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  align-items: stretch;
+  gap: 12px;
+  margin: 8px 0;
+}
+.duel-player-hand {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  min-height: 156px;
+  padding: 12px;
+  border: 1px solid rgba(243, 240, 233, 0.28);
+  background: rgba(17, 22, 29, 0.82);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+.duel-player-hand span { max-width: 100%; overflow: hidden; color: #d8dee5; font-size: 13px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.duel-player-hand b { font-size: 68px; line-height: 1; }
+.duel-player-hand small { color: var(--muted); font-weight: 800; }
+.duel-player-stage.is-animating .duel-player-hand { animation: playerHandWindup 1000ms cubic-bezier(.36,.02,.16,1) both; animation-delay: var(--hand-delay); }
+.duel-player-stage.is-revealed .duel-player-hand { border-color: rgba(243, 240, 233, 0.42); }
+.duel-player-hand.winner { border-color: var(--yellow) !important; background: rgba(224, 184, 79, 0.22); box-shadow: 0 0 0 2px rgba(224, 184, 79, 0.25), 0 0 34px rgba(224, 184, 79, 0.45); animation: winnerPulse 780ms ease-in-out infinite alternate; }
+.duel-prompt.result { color: #ffe2a0; font-size: 20px; font-weight: 900; }
+.duel-result-banner { padding: 9px 18px; border: 1px solid var(--yellow); color: var(--ink); background: var(--yellow); font-size: clamp(18px, 2.6vw, 28px); font-weight: 1000; box-shadow: 0 0 28px rgba(224, 184, 79, 0.45); }
+@keyframes playerHandWindup { 0%, 100% { transform: translateY(0) rotate(0); } 22% { transform: translateY(-15px) rotate(-7deg); } 44% { transform: translateY(6px) rotate(7deg); } 66% { transform: translateY(-15px) rotate(-7deg); } 82% { transform: translateY(6px) rotate(7deg); } }
+@keyframes winnerPulse { from { transform: scale(1); } to { transform: scale(1.045); } }
+@media (max-width: 700px) { .room-duel-screen { padding: 26px 10px; } .duel-player-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .duel-player-hand { min-height: 118px; padding: 8px; } .duel-player-hand b { font-size: 52px; } }
+/* Expanded battle actions and opponent-only status cards. */
+.room-shell.battle-active .room-throws { display: none !important; }
+.room-shell.battle-active .battle-controls { grid-template-columns: minmax(0, 1fr) !important; min-height: 92px; }
+.room-shell.battle-active .room-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.room-shell.battle-active .room-action-button { min-height: 92px; padding: 14px 18px; font-size: 18px; }
+.room-shell.battle-active .slots-panel { min-height: 146px; padding: 10px 14px; }
+.room-shell.battle-active .slot-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 8px; }
+.room-shell.battle-active .slot-card { display: grid; grid-template-columns: 92px minmax(0, 1fr); min-height: 118px; padding: 0; overflow: hidden; }
+.slot-portrait { width: 92px; height: 118px; object-fit: cover; object-position: center top; border-right: 1px solid var(--line); background: #101318; }
+.slot-card-content { display: grid; align-content: center; gap: 5px; min-width: 0; padding: 9px 11px; }
+.room-shell.battle-active .slot-card strong { font-size: 18px; }
+.room-shell.battle-active .slot-card small { max-height: none; font-size: 13px; line-height: 1.35; }
+.room-shell.battle-active .slot-card .slot-stats { gap: 5px; }
+.room-shell.battle-active .slot-card .slot-chip { min-height: 21px; padding: 2px 6px; font-size: 12px; }
+@media (max-width: 700px) { .room-shell.battle-active .room-action-button { min-height: 70px; font-size: 15px; } .room-shell.battle-active .slot-grid { grid-template-columns: 1fr; } .room-shell.battle-active .slot-card { grid-template-columns: 72px minmax(0, 1fr); min-height: 102px; } .slot-portrait { width: 72px; height: 102px; } }
+/* Distinct team markers keep player cards visually separated. */
+.slot-team-badge { justify-self: start; padding: 3px 8px; border: 1px solid currentColor; color: #e5e8ed; background: rgba(243, 240, 233, 0.1); font-size: 12px; font-weight: 1000; letter-spacing: 0.08em; }
+.slot-team-badge.team-a { border-color: #58adff; color: #c9e8ff; background: rgba(44, 126, 210, 0.35); }
+.slot-team-badge.team-b { border-color: #ff776d; color: #ffd1ca; background: rgba(190, 62, 54, 0.35); }
+.slot-team-badge.free-for-all { border-color: #d9b957; color: #ffeaa8; background: rgba(174, 136, 34, 0.3); }
+.room-shell.battle-active .slot-card.team-a { box-shadow: inset 4px 0 0 #4f93e0, 0 8px 20px rgba(44, 126, 210, 0.16); }
+.room-shell.battle-active .slot-card.team-b { box-shadow: inset 4px 0 0 #e05b4f, 0 8px 20px rgba(190, 62, 54, 0.16); }
+/* Team homes are color-only markers; the map keeps its space for gameplay. */
+.room-shell.battle-active .room-battle-panel { grid-template-rows: 26px 76px minmax(260px, 1fr) 92px; }
+.room-shell.battle-active .battle-map-panel { padding: 10px; }
+.room-shell.battle-active .battle-map-layout,
+.room-shell.battle-active .battle-map-layout.team-map { min-height: 220px; grid-template-rows: repeat(3, minmax(58px, 1fr)); gap: 12px 24px; }
+.room-shell.battle-active .battle-map-layout .room-map-node { min-height: 58px; }
+.map-team-box { display: block; width: 30px; height: 30px; border: 3px solid currentColor; background: rgba(255, 255, 255, 0.06); box-shadow: 0 0 18px currentColor; }
+.map-team-box.red { color: #e05b4f; }
+.map-team-box.blue { color: #4f93e0; }
+/* Compact action grid: reserve the area without stretching a single action. */
+.room-shell.battle-active .room-battle-panel { grid-template-rows: 26px 76px minmax(260px, 1fr) minmax(112px, auto); }
+.room-shell.battle-active .battle-controls { min-height: 112px; }
+.room-shell.battle-active .room-actions { grid-template-columns: repeat(auto-fill, minmax(150px, 220px)); grid-auto-rows: 48px; justify-content: start; align-content: center; gap: 9px; overflow-y: auto; padding: 8px; }
+.room-shell.battle-active .room-action-button { min-height: 48px; padding: 8px 12px; font-size: 15px; }
+@media (max-width: 700px) { .room-shell.battle-active .room-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 46px; } .room-shell.battle-active .room-action-button { min-height: 46px; font-size: 14px; } }
+/* Content-sized battle status cards: never stretch a single player across a row. */
+.room-shell.battle-active .self-status-panel { width: min(660px, 100%); justify-self: start; grid-template-columns: 76px minmax(260px, 1fr) minmax(180px, 0.7fr) auto; }
+.room-shell.battle-active .slot-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 340px)); justify-content: start; }
+.room-shell.battle-active .slot-card { width: 100%; }
+@media (max-width: 700px) { .room-shell.battle-active .self-status-panel { width: 100%; } .room-shell.battle-active .slot-grid { grid-template-columns: 1fr; } }
+/* Top team-versus status strip keeps the map and action area free. */
+.room-shell.battle-active > .slots-panel { display: none; }
+.room-shell.battle-active .room-battle-panel { grid-template-rows: 26px 76px minmax(92px, auto) minmax(300px, 1fr) minmax(112px, auto); grid-template-areas: "title" "self" "teams" "map" "controls"; }
+.room-shell.battle-active .battle-team-status { grid-area: teams; display: grid; grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr); align-items: stretch; gap: 10px; min-height: 92px; }
+.team-status-side { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; padding: 7px; border: 1px solid var(--line); background: rgba(17, 21, 26, 0.86); }
+.team-status-side > strong { display: grid; place-items: center; writing-mode: vertical-rl; letter-spacing: 0.14em; font-size: 13px; }
+.team-status-red { border-color: rgba(224, 91, 79, 0.78); }
+.team-status-red > strong { color: #ffb3aa; background: rgba(190, 62, 54, 0.2); }
+.team-status-blue { border-color: rgba(79, 147, 224, 0.78); }
+.team-status-blue > strong { color: #bdddff; background: rgba(44, 126, 210, 0.2); }
+.team-status-vs { display: grid; place-items: center; color: #ffe2a0; font-size: 20px; font-weight: 1000; font-style: italic; }
+.team-status-list { display: flex; gap: 8px; min-width: 0; overflow-x: auto; }
+.team-status-card { display: grid; grid-template-columns: 56px minmax(140px, 1fr); min-width: 220px; min-height: 76px; overflow: hidden; border: 1px solid rgba(243, 240, 233, 0.25); background: rgba(9, 12, 16, 0.7); }
+.team-status-card.team-a { border-left: 4px solid #4f93e0; }
+.team-status-card.team-b { border-left: 4px solid #e05b4f; }
+.team-status-card.active-turn { box-shadow: inset 0 0 0 2px var(--yellow); }
+.team-status-card img { width: 56px; height: 76px; object-fit: cover; object-position: center top; }
+.team-status-card > div { display: grid; align-content: center; gap: 3px; padding: 6px 8px; }
+.team-status-card strong { font-size: 14px; }
+.team-status-card small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+@media (max-width: 700px) { .room-shell.battle-active .room-battle-panel { grid-template-rows: auto auto auto minmax(250px, 1fr) auto; } .room-shell.battle-active .battle-team-status { grid-template-columns: 1fr; } .team-status-vs { min-height: 28px; } .team-status-side { grid-template-columns: 32px minmax(0, 1fr); } .team-status-side > strong { writing-mode: horizontal-tb; } }
+/* Lobby assignment and role-based character picker. */
+.slot-assignment { width: 100%; margin-top: 10px; padding: 7px 9px; border: 1px solid rgba(224,184,79,.55); background: #151a20; color: var(--text); font: inherit; }
+.character-stage { grid-template-columns: minmax(185px, .55fr) minmax(0, 1.45fr); }
+.character-grid.character-showcase { grid-template-columns: 1fr; align-content: start; max-height: 620px; overflow: auto; padding-right: 5px; }
+.character-grid.character-showcase .character-card { min-height: 92px; display: grid; grid-template-columns: 76px 1fr; align-items: center; isolation: isolate; }
+.character-grid.character-showcase .character-card img { position: static; width: 76px; height: 92px; object-fit: cover; }
+.character-grid.character-showcase .character-card-shade { background: linear-gradient(90deg, rgba(9,12,16,.1), rgba(9,12,16,.82)); }
+.character-grid.character-showcase .character-copy { position: static; padding: 10px; }
+.character-grid.character-showcase .character-card strong { font-size: 19px; }
+.character-grid.character-showcase .character-card small, .character-grid.character-showcase .character-card em { display: none; }
+.character-preview { display: grid; grid-template-columns: minmax(180px, .8fr) 1.2fr; gap: 22px; align-items: center; margin-bottom: 20px; padding: 16px; border: 1px solid rgba(224,184,79,.38); background: rgba(7,10,14,.35); }
+.character-preview img { width: 100%; max-height: 365px; min-height: 220px; object-fit: cover; object-position: center top; border: 1px solid var(--line); }
+.character-preview h2 { margin: 6px 0 10px; }
+.character-skills { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.character-skills li { padding: 9px 11px; border-left: 3px solid var(--yellow); background: rgba(224,184,79,.08); color: #ffe2a0; }
+@media (max-width: 700px) { .character-stage { grid-template-columns: 1fr; } .character-grid.character-showcase { grid-template-columns: repeat(2, minmax(0,1fr)); max-height: none; padding: 0; } .character-grid.character-showcase .character-card { grid-template-columns: 50px 1fr; min-height: 70px; } .character-grid.character-showcase .character-card img { width: 50px; height: 70px; } .character-preview { grid-template-columns: 1fr; } .character-preview img { max-height: 260px; } }
+/* Fixed-size roster on the left; selected character details on the right. */
+.character-stage { grid-template-columns: 270px minmax(0, 1fr) !important; height: min(620px, calc(100vh - 190px)); min-height: 440px; }
+.character-grid.character-showcase { grid-column: 1; grid-row: 1; grid-template-columns: 1fr !important; max-height: 100%; overflow-y: auto; padding-right: 4px; }
+.character-grid.character-showcase .character-card { display: grid !important; grid-template-columns: 72px minmax(0, 1fr); min-height: 76px !important; height: 76px; }
+.character-grid.character-showcase .character-card img { position: static; width: 72px; height: 76px; object-fit: cover; }
+.character-grid.character-showcase .character-card-shade { display: none; }
+.character-grid.character-showcase .character-copy { position: static; padding: 9px 10px; align-self: center; }
+.character-grid.character-showcase .character-card strong { font-size: 18px; }
+.character-grid.character-showcase .character-card small, .character-grid.character-showcase .character-card em { display: none; }
+.character-intro { grid-column: 2; grid-row: 1; min-width: 0; overflow: auto; }
+.character-preview { grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr); min-height: 390px; margin: 0; }
+.character-preview img { height: 390px; min-height: 0; object-fit: cover; }
+@media (max-width: 700px) { .character-stage { grid-template-columns: 1fr !important; height: auto; } .character-grid.character-showcase { grid-column: 1; grid-row: auto; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; max-height: none; } .character-intro { grid-column: 1; grid-row: auto; } .character-preview { grid-template-columns: 1fr; min-height: 0; } .character-preview img { height: 240px; } }
+/* Battle rosters always include the local player. Boss mode has a large Boss card and survivor row. */
+.room-shell.battle-active .self-status-panel { display: none; }
+.room-shell.battle-active .room-battle-panel { grid-template-rows: 26px minmax(92px, auto) minmax(300px, 1fr) minmax(112px, auto); grid-template-areas: "title" "teams" "map" "controls"; }
+.room-shell.battle-active .battle-team-status.boss-roster { grid-template-columns: minmax(260px, 0.38fr) minmax(0, 1fr); gap: 14px; }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-vs { display: none; }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-side { grid-template-columns: 46px minmax(0, 1fr); }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-red { border-color: rgba(224, 184, 79, .82); }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-red > strong { color: #ffe2a0; background: rgba(224,184,79,.18); }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-blue { border-color: rgba(105, 207, 255, .7); }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-blue > strong { color: #bde8ff; background: rgba(54,140,205,.18); }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-card.boss-card { min-width: 300px; grid-template-columns: 84px minmax(180px, 1fr); min-height: 94px; }
+.room-shell.battle-active .battle-team-status.boss-roster .team-status-card.boss-card img { width: 84px; height: 94px; }
+.boss-health { height: 12px; overflow: hidden; border: 1px solid rgba(224,184,79,.7); background: #251f1b; border-radius: 999px; }
+.boss-health > span { display:block; height:100%; background: linear-gradient(90deg,#d84b43,#ff806b); box-shadow: 0 0 12px rgba(255,100,85,.7); }
+
+/* The picker is a single desktop screen: no page or panel scrollbars. */
+@media (min-width: 701px) {
+  body:has(.character-screen:not(.hidden)) { overflow: hidden; }
+  .character-screen { height: 100vh; min-height: 0; padding: 14px 22px; gap: 12px; overflow: hidden; }
+  .character-screen .screen-head { margin-bottom: 0; }
+  .character-screen .screen-head h1 { font-size: clamp(40px, 5vw, 70px); }
+  .character-stage { height: auto !important; min-height: 0 !important; }
+  .character-grid.character-showcase { overflow-y: hidden; }
+  .character-grid.character-showcase .character-card.hidden,
+  .character-grid.character-showcase .character-card[hidden] { display: none !important; }
+  .character-intro { overflow: hidden; padding: 14px; }
+  .character-intro h2 { margin: 5px 0 8px; font-size: clamp(24px, 2.5vw, 36px); }
+  .character-preview { min-height: 0; height: 100%; gap: 16px; padding: 12px; }
+  .character-preview img { height: min(360px, calc(100vh - 310px)); }
+  .character-skills { gap: 6px; margin-top: 10px; }
+  .character-skills li { padding: 7px 10px; }
+  .character-legend { margin-top: 12px; }
+  .character-footer { padding: 8px 16px; }
+}
+/* Prominent non-blocking report for every human and bot action after the duel. */
+.room-action-bulletin {
+  position: fixed;
+  z-index: 31;
+  top: 50%;
+  right: clamp(22px, 5vw, 110px);
+  display: grid;
+  width: min(360px, 23vw);
+  gap: 10px;
+  padding: 18px 20px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(224, 184, 79, 0.9);
+  border-left: 5px solid var(--yellow);
+  background: rgba(10, 14, 19, 0.91);
+  box-shadow: 0 0 0 1px rgba(224,184,79,.18), 0 18px 46px rgba(0,0,0,.48), 0 0 34px rgba(224,184,79,.18);
+  pointer-events: none;
+}
+.room-action-bulletin span { color: #ffe2a0; font-size: 13px; font-weight: 1000; letter-spacing: .12em; }
+.room-action-bulletin strong { color: var(--text); font-size: clamp(18px, 1.55vw, 25px); line-height: 1.45; }
+@media (max-width: 900px) {
+.room-action-bulletin { top: auto; right: 14px; bottom: 14px; width: min(460px, calc(100vw - 28px)); transform: none; }
+}
+
+/* Always-visible battle information for every player. */
+.room-shell.battle-active .self-status-panel { display: grid; }
+.team-inventory { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.team-item { min-width: 21px; padding: 1px 4px; border: 1px solid var(--line); color: var(--muted); font-size: 11px; font-style: normal; text-align: center; }
+.team-item.on { border-color: rgba(224,184,79,.85); background: rgba(224,184,79,.22); color: #ffe2a0; }
+.team-boss-skills { display: grid; gap: 2px; margin-top: 4px; padding: 5px 6px; border-left: 3px solid var(--yellow); background: rgba(224,184,79,.1); color: #ffe2a0; font-size: 11px; line-height: 1.35; }
+.team-boss-skills b { font-size: 12px; }
+.room-shell.battle-active .team-status-card.boss-card { min-width: 340px; }
+/* Compact battle layout: one roster strip, no duplicate local-status card or empty panel space. */
+.room-shell.battle-active {
+  height: auto;
+  min-height: 100vh;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  overflow: visible;
+}
+.room-shell.battle-active .self-status-panel { display: none !important; }
+.room-shell.battle-active .room-battle-panel {
+  align-self: start;
+  grid-template-rows: 26px auto minmax(260px, auto) auto;
+  grid-template-areas: "title" "teams" "map" "controls";
+}
+.room-shell.battle-active .battle-map-panel { min-height: 260px; }
+.room-shell.battle-active .battle-controls { min-height: 0; }
+/* Full-screen action report shown between every two actors. */
+.duel-action-report {
+  display: grid;
+  width: min(760px, 88vw);
+  gap: 14px;
+  padding: 28px 34px;
+  border: 1px solid rgba(224,184,79,.88);
+  border-left: 7px solid var(--yellow);
+  background: rgba(15,20,27,.94);
+  box-shadow: 0 0 44px rgba(224,184,79,.22), 0 24px 58px rgba(0,0,0,.46);
+}
+.duel-action-report span { color: #ffe2a0; font-size: 14px; font-weight: 1000; letter-spacing: .16em; }
+.duel-action-report strong { color: var(--text); font-size: clamp(24px, 3vw, 42px); line-height: 1.35; }
+.team-boss-actions { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.team-boss-actions .self-skill-button { flex: 1 1 140px; }
+/* Boss battle board: survivors across the top, map/actions left, Boss status and skill cards right. */
+.boss-status-panel { display: none; }
+@media (min-width: 901px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(310px, 390px);
+    grid-template-rows: auto auto minmax(300px, 1fr) minmax(150px, auto);
+    grid-template-areas: "title title" "teams teams" "map boss" "controls boss";
+    align-items: stretch;
+    gap: 12px;
+  }
+  .room-battle-panel.boss-layout > .section-title { grid-area: title; }
+  .room-battle-panel.boss-layout > .battle-team-status { grid-area: teams; grid-template-columns: 1fr; min-height: 118px; }
+  .room-battle-panel.boss-layout .team-status-red { display: none; }
+  .room-battle-panel.boss-layout .team-status-vs { display: none; }
+  .room-battle-panel.boss-layout .team-status-blue { grid-template-columns: 52px minmax(0, 1fr); }
+  .room-battle-panel.boss-layout .team-status-list { min-height: 94px; }
+  .room-battle-panel.boss-layout > .battle-map-panel { grid-area: map; min-height: 300px; }
+  .room-battle-panel.boss-layout > .battle-controls { grid-area: controls; min-height: 150px; align-content: end; }
+  .room-battle-panel.boss-layout > .boss-status-panel {
+    grid-area: boss;
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    min-height: 0;
+    padding: 10px;
+    border: 1px solid rgba(224,184,79,.75);
+    background: linear-gradient(180deg, rgba(43,35,23,.96), rgba(15,19,24,.96));
+    box-shadow: inset 0 0 0 1px rgba(255,224,138,.08), 0 12px 28px rgba(0,0,0,.28);
+    overflow: auto;
+  }
+  .room-battle-panel.boss-layout > .boss-status-panel:empty { display: block; }
+  .room-battle-panel.boss-layout .boss-status-panel .team-status-card.boss-card,
+  .room-battle-panel.boss-layout .boss-status-panel .team-status-card {
+    width: 100%;
+    min-width: 0;
+    min-height: 230px;
+    grid-template-columns: minmax(130px, .72fr) minmax(0, 1fr);
+    border-color: rgba(224,184,79,.85);
+    box-shadow: 0 0 24px rgba(224,184,79,.12);
+  }
+  .room-battle-panel.boss-layout .boss-status-panel .team-status-card img { width: 100%; height: 230px; object-fit: cover; object-position: center top; }
+  .room-battle-panel.boss-layout .boss-status-panel .team-status-card > div { padding: 12px; gap: 7px; }
+  .room-battle-panel.boss-layout .boss-status-panel .team-boss-skills { margin-top: 7px; padding: 8px; font-size: 12px; }
+  .room-battle-panel.boss-layout .boss-status-panel .team-boss-skills b { font-size: 14px; }
+}
+@media (max-width: 900px) {
+  .room-battle-panel.boss-layout > .boss-status-panel { display: block; order: 3; }
+  .room-battle-panel.boss-layout .team-status-red { display: none; }
+  .room-battle-panel.boss-layout .team-status-vs { display: none; }
+  .room-battle-panel.boss-layout .team-status-blue { grid-column: 1 / -1; }
+  .room-battle-panel.boss-layout .boss-status-panel .team-status-card { width: 100%; min-width: 0; }
+}.room-battle-panel.boss-layout .boss-skill-box {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(224,184,79,.62);
+  background: rgba(224,184,79,.08);
+  color: #ffe2a0;
+}
+.room-battle-panel.boss-layout .boss-skill-box > strong { display: block; margin-bottom: 6px; font-size: 14px; }
+.room-battle-panel.boss-layout .boss-skill-box .team-boss-skills { margin: 0; border-left: 0; padding: 0; background: transparent; }/* Expanded survivor roster, hover skill descriptions, and whole-map teleport targeting. */
+@media (min-width: 901px) {
+  .room-battle-panel.boss-layout .team-status-blue .team-status-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    width: 100%;
+    overflow: visible;
+  }
+  .room-battle-panel.boss-layout .team-status-blue .team-status-card {
+    width: 100%;
+    min-width: 0;
+  }
+}
+.room-skill-card { position: relative; overflow: visible; }
+.room-skill-card.unavailable { opacity: .48; filter: grayscale(.45); cursor: default; }
+.room-skill-card::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 120;
+  left: calc(100% + 10px);
+  top: 50%;
+  width: min(310px, 38vw);
+  padding: 10px 12px;
+  transform: translate(8px,-50%);
+  border: 1px solid rgba(224,184,79,.85);
+  background: rgba(10,14,19,.97);
+  color: #f4ead0;
+  box-shadow: 0 12px 32px rgba(0,0,0,.46);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.55;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.room-skill-card:hover::after,.room-skill-card:focus-visible::after { opacity: 1; visibility: visible; transform: translate(0,-50%); }
+.battle-map-layout.teleport-targeting { filter: brightness(1.1); }
+.battle-map-layout.teleport-targeting .room-map-node.teleport-highlight {
+  outline: 3px solid #ffd466;
+  border-color: #ffd466;
+  background: linear-gradient(180deg,rgba(104,80,28,.76),rgba(30,31,27,.95));
+  box-shadow: 0 0 26px rgba(255,201,80,.52), inset 0 0 18px rgba(255,211,99,.13);
+  animation: teleport-map-pulse 1.05s ease-in-out infinite alternate;
+}
+.battle-map-layout.teleport-targeting .room-map-node.current-teleport-location { opacity: .72; cursor: not-allowed; outline-color: #a89b76; }
+@keyframes teleport-map-pulse { from { transform: scale(1); } to { transform: scale(1.025); } }
+@media (max-width:900px) { .room-skill-card::after { left: 0; top: auto; bottom: calc(100% + 8px); width: min(300px,80vw); transform: translateY(8px); } .room-skill-card:hover::after,.room-skill-card:focus-visible::after { transform: none; } }
+.room-battle-panel.boss-layout > .boss-status-panel { overflow: visible; }
+/* Final Boss sidebar placement: status first, skill buttons underneath. */
+.room-battle-panel.boss-layout > .boss-status-panel {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: auto;
+  gap: 12px;
+}
+.room-battle-panel.boss-layout .boss-status-content { order: 1; width: 100%; }
+.room-battle-panel.boss-layout .room-skills {
+  order: 2;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid rgba(224,184,79,.52);
+}
+.room-battle-panel.boss-layout .room-skill-card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 58px;
+  padding: 10px 12px;
+  overflow: visible;
+  border: 1px solid rgba(159,130,68,.65) !important;
+  background: linear-gradient(180deg,#26231d 0%,#17191c 100%) !important;
+  color: #a8a294 !important;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-align: left;
+  cursor: default;
+  opacity: .56;
+  filter: grayscale(.35);
+}
+.room-battle-panel.boss-layout .room-skill-card::before {
+  content: "技";
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #6d6045;
+  color: #d8ceb7;
+}
+.room-battle-panel.boss-layout .room-skill-card.ready {
+  border-color: #ffd45f !important;
+  background: linear-gradient(180deg,#6e5321 0%,#332811 100%) !important;
+  color: #fff2b9 !important;
+  opacity: 1 !important;
+  filter: none !important;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255,218,107,.24),0 0 22px rgba(255,194,54,.48),inset 0 0 18px rgba(255,220,106,.13) !important;
+  animation: ready-skill-glow 1.15s ease-in-out infinite alternate;
+}
+.room-battle-panel.boss-layout .room-skill-card.ready::before { background:#c4861f; color:#fff8d6; box-shadow:0 0 12px rgba(255,196,62,.65); }
+@keyframes ready-skill-glow { from { transform:translateY(0); } to { transform:translateY(-2px); box-shadow:0 0 0 1px rgba(255,218,107,.3),0 0 30px rgba(255,194,54,.66),inset 0 0 20px rgba(255,220,106,.18); } }
+@media (max-width:700px) { .room-battle-panel.boss-layout .room-skills { grid-template-columns:1fr; } }
+/* Local role card and skill modal: skills never leak into the lobby or outside the viewport. */
+.room-skill-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 7, 11, .72);
+  backdrop-filter: blur(5px);
+}
+.room-skill-dialog.hidden { display: none !important; }
+.skill-dialog-card {
+  width: min(430px, calc(100vw - 40px));
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid rgba(255, 212, 95, .92);
+  background: linear-gradient(160deg, #282116, #11161d 68%);
+  color: var(--text);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, .64), 0 0 0 1px rgba(255, 212, 95, .16) inset;
+}
+.skill-dialog-card > strong { color: #ffe9a4; font-size: 22px; }
+.skill-dialog-card p { margin: 0; color: #d5d0c2; line-height: 1.6; }
+.skill-dialog-card small { color: #aab5c1; }
+.heal-counter { display: grid; grid-template-columns: 52px minmax(76px, 1fr) 52px; gap: 10px; align-items: center; }
+.heal-counter button,
+.skill-dialog-card .confirm-skill,
+.skill-dialog-card .cancel-skill { min-height: 46px; border: 1px solid rgba(255, 220, 117, .72); background: #20252d; color: #fff0b8; font: inherit; font-weight: 900; cursor: pointer; }
+.heal-counter button:hover,
+.skill-dialog-card .cancel-skill:hover { background: #34302a; }
+.heal-counter b { display: grid; min-height: 46px; place-items: center; border: 1px solid var(--line); color: #ffe2a0; font-size: 22px; }
+.skill-dialog-card > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.skill-dialog-card .confirm-skill { border-color: #ffd45f; background: linear-gradient(180deg, #77591f, #3a2c12); box-shadow: 0 0 18px rgba(255, 196, 62, .28); }
+.skill-dialog-card .confirm-skill:hover { background: #e4b743; color: #16130d; }
+
+/* The local non-BOSS character is the tactical card at lower-left; BOSS keeps the right sidebar. */
+.room-shell.battle-active .self-status-panel { display: grid !important; grid-area: self; width: min(760px, 100%); min-height: 0; grid-template-columns: 76px minmax(180px, 1fr) minmax(160px, .7fr); overflow: visible; }
+.room-shell.battle-active .self-status-panel.local-boss { display: none !important; }
+.self-status-skills { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 9px; border-top: 1px solid rgba(224, 184, 79, .38); background: rgba(8, 11, 15, .34); }
+.self-status-skills .room-skill-card { position: relative; min-height: 46px; padding: 7px 9px; border: 1px solid rgba(130, 121, 93, .6); background: #20231f; color: #a9a495; font: inherit; font-size: 13px; font-weight: 900; text-align: left; cursor: default; }
+.self-status-skills .room-skill-card.ready { border-color: #ffd45f; background: linear-gradient(180deg, #6e5321, #332811); color: #fff2b9; cursor: pointer; box-shadow: 0 0 18px rgba(255, 194, 54, .38); }
+.self-status-skills .room-skill-card.ready:hover { transform: translateY(-1px); box-shadow: 0 0 24px rgba(255, 207, 85, .62); }
+.self-status-skills .room-skill-card.unavailable { opacity: .55; }
+.self-status-skills .room-skill-card::after { left: 0; top: auto; bottom: calc(100% + 8px); width: min(300px, 76vw); transform: translateY(8px); }
+.self-status-skills .room-skill-card:hover::after,
+.self-status-skills .room-skill-card:focus-visible::after { transform: none; }
+.team-status-card.skill-target {
+  position: relative;
+  cursor: pointer;
+  border-color: #ffd45f !important;
+  background: linear-gradient(135deg, rgba(112, 81, 24, .58), rgba(13, 17, 22, .92));
+  box-shadow: 0 0 0 2px rgba(255, 211, 92, .42), 0 0 28px rgba(255, 193, 52, .46), inset 0 0 20px rgba(255, 219, 119, .1);
+  animation: skill-target-pulse 1.05s ease-in-out infinite alternate;
+}
+.team-status-card.skill-target::after { content: "点击选择"; position: absolute; right: 7px; top: 6px; padding: 2px 5px; border: 1px solid #ffd45f; background: #382b13; color: #fff0b8; font-size: 10px; font-weight: 900; }
+.team-status-card.skill-target:hover { filter: brightness(1.18); }
+@keyframes skill-target-pulse { from { box-shadow: 0 0 0 2px rgba(255,211,92,.38), 0 0 20px rgba(255,193,52,.32); } to { box-shadow: 0 0 0 2px rgba(255,225,135,.75), 0 0 34px rgba(255,193,52,.7); } }
+@media (min-width: 901px) {
+  .room-shell.battle-active .room-battle-panel:not(.boss-layout) { grid-template-rows: 26px auto minmax(280px, 1fr) auto minmax(112px, auto); grid-template-areas: "title" "teams" "map" "self" "controls"; }
+  .room-shell.battle-active .room-battle-panel.boss-layout { grid-template-rows: auto auto minmax(300px, 1fr) auto minmax(112px, auto); grid-template-areas: "title title" "teams teams" "map boss" "self boss" "controls boss"; }
+}
+@media (max-width: 900px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout { grid-template-areas: "title" "teams" "map" "self" "controls" "boss"; }
+}
+@media (max-width: 700px) {
+  .room-shell.battle-active .self-status-panel { width: 100%; grid-template-columns: 66px minmax(0, 1fr); }
+  .self-status-skills { grid-template-columns: 1fr; }
+  .skill-dialog-card { padding: 18px; }
+}
+.magician-throw-editor { width: min(620px, 92vw); display: grid; gap: 8px; margin: 16px auto; padding: 12px; border: 1px solid rgba(255, 212, 95, .54); background: rgba(12, 16, 22, .78); }
+.magician-throw-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(160px, .8fr); gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid rgba(255,255,255,.11); color: #f4ead0; }
+.magician-throw-row select { min-height: 36px; border: 1px solid rgba(255,212,95,.58); background: #171d25; color: #ffe9a4; font: inherit; }
+.magician-throw-row select:disabled { opacity: .54; }
+@media (max-width: 600px) { .magician-throw-row { grid-template-columns: 1fr; gap: 5px; } }
+/* BOSS roster uses one full-width survivor row; hidden BOSS roster columns must not reserve space. */
+@media (min-width: 901px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout > .battle-team-status.boss-roster {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-height: 118px;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout .team-status-blue {
+    grid-template-columns: 52px minmax(0, 1fr);
+    min-width: 0;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout .team-status-blue .team-status-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 280px));
+    justify-content: start;
+    grid-auto-flow: row;
+    align-items: stretch;
+    width: 100%;
+    min-height: 94px;
+    overflow: visible;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout .team-status-blue .team-status-card {
+    width: 100%;
+    min-width: 0;
+    min-height: 94px;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout {
+    grid-template-rows: 28px minmax(118px, auto) minmax(260px, 1fr) minmax(112px, auto);
+    grid-template-areas: "title title" "teams teams" "map boss" "controls boss";
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor {
+    grid-template-rows: 28px minmax(118px, auto) minmax(240px, 1fr) auto minmax(112px, auto);
+    grid-template-areas: "title title" "teams teams" "map boss" "self boss" "controls boss";
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout > .battle-controls {
+    min-height: 112px;
+    align-content: stretch;
+  }
+}
+/* The winner must be identifiable before the magician decides whether to rewrite the result. */
+.duel-player-stage.is-revealed .duel-player-hand:not(.winner) { opacity: .48; filter: saturate(.55) brightness(.78); }
+.duel-player-hand.winner { position: relative; border-color: #ffd45f !important; background: radial-gradient(circle at 50% 12%, rgba(255,224,123,.34), rgba(224,184,79,.16) 45%, rgba(17,22,29,.9) 100%); box-shadow: 0 0 0 2px rgba(255,222,117,.62), 0 0 42px rgba(255,193,52,.72), inset 0 0 26px rgba(255,225,133,.18); }
+.duel-player-hand .duel-winner-badge { position: absolute; top: -13px; left: 50%; z-index: 2; padding: 4px 11px; transform: translateX(-50%); border: 1px solid #ffe08a; border-radius: 999px; background: linear-gradient(180deg, #f6cb5b, #be7c1d); color: #18130b; box-shadow: 0 4px 16px rgba(255,196,62,.56); font-size: 12px; font-style: normal; font-weight: 1000; letter-spacing: .12em; }
+.duel-player-hand.winner b { filter: drop-shadow(0 0 12px rgba(255,217,95,.78)); transform: scale(1.12); }
+/* Survivor operator view: BOSS and survivors stay separate on the top row; only this view uses the compact lower-right actor card. */
+.room-shell.battle-active .battle-log-tab,
+.room-shell.battle-active .room-battle-log { display: none !important; }
+.battle-log-dialog { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 22px; background: rgba(3, 6, 10, .78); backdrop-filter: blur(7px); }
+.battle-log-dialog.hidden { display: none; }
+.battle-log-dialog-card { width: min(720px, 96vw); max-height: min(76vh, 760px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding: 18px; border: 1px solid rgba(224, 184, 79, .82); background: linear-gradient(145deg, #20262e, #10151c 72%); box-shadow: 0 24px 70px rgba(0,0,0,.58), inset 0 0 24px rgba(224,184,79,.07); }
+.battle-log-dialog-card header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(224,184,79,.34); }
+.battle-log-dialog-card h2 { margin: 2px 0 0; color: #fff0bb; }
+.battle-log-dialog-card .eyebrow { margin: 0; color: #e4bd57; font-size: 12px; font-weight: 900; letter-spacing: .16em; }
+.battle-log-dialog-card ol { min-height: 0; overflow: auto; margin: 0; padding: 0 0 0 26px; color: #d6dbe3; line-height: 1.7; }
+.battle-log-dialog-card li { padding: 7px 4px; border-bottom: 1px solid rgba(255,255,255,.07); }
+@media (min-width: 901px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor {
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 360px);
+    grid-template-rows: 28px minmax(118px, auto) minmax(260px, 1fr) minmax(112px, auto);
+    grid-template-areas: "title title" "teams teams" "map map" "controls boss";
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .battle-team-status.boss-roster {
+    grid-template-columns: minmax(250px, .38fr) minmax(0, 1fr) !important;
+    min-height: 118px;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red,
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-blue { display: grid; grid-template-columns: 52px minmax(0, 1fr); min-width: 0; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-vs { display: none; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red .team-status-list,
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-blue .team-status-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); grid-auto-flow: row; min-height: 94px; overflow: visible; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red .team-status-card,
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-blue .team-status-card { width: 100%; min-width: 0; min-height: 94px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .battle-map-panel { grid-area: map; min-height: 260px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .battle-controls { grid-area: controls; min-height: 112px; align-content: stretch; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .self-status-panel { display: none !important; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .boss-status-panel { grid-area: boss; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; align-content: start; gap: 10px; min-height: 112px; overflow: visible; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .boss-status-content { order: 1; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .room-skills { order: 2; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 9px; border-top: 1px solid rgba(224,184,79,.4); }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card { display: grid; grid-template-columns: 82px minmax(0, 1fr); min-height: 96px; border: 1px solid rgba(91, 165, 224, .86); background: linear-gradient(135deg, rgba(22,52,76,.92), rgba(13,18,24,.98)); box-shadow: 0 0 20px rgba(62,149,228,.14); }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card img { width: 82px; height: 96px; object-fit: cover; object-position: center top; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card > div { display: grid; align-content: center; gap: 3px; min-width: 0; padding: 9px 10px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card span { color: #8bc4f6; font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card strong { color: #f7f1df; font-size: 17px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card small { color: #bdcbd6; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card .health-bar { gap: 2px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card .health-heart { width: 12px; height: 12px; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .operator-status-card .team-inventory { margin-top: 2px; }
+}
+@media (max-width: 900px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor { grid-template-areas: "title" "teams" "map" "boss" "controls"; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor > .self-status-panel { display: none !important; }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red { display: grid; }
+}
+
+/* Fixed roster cards: empty roster space stays empty instead of stretching the final character card. */
+@media (min-width: 901px) {
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red .team-status-list,
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-blue .team-status-list {
+    grid-template-columns: repeat(auto-fill, 280px);
+    grid-auto-rows: 94px;
+    justify-content: start;
+    align-content: start;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-red .team-status-card,
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-blue .team-status-card {
+    width: 280px !important;
+    height: 94px;
+    min-height: 94px;
+    align-self: start;
+  }
+  .room-shell.battle-active .room-battle-panel.boss-layout.local-survivor .team-status-card.boss-card {
+    width: 300px !important;
+    height: 94px;
+    min-height: 94px;
+  }
 }

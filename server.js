@@ -8,7 +8,8 @@ const root = __dirname;
 const port = Number(process.env.PORT || 8787);
 const rooms = new Map();
 const clients = new Map();
-const characterIds = ["scout", "vanguard", "medic"];
+const characterIds = ["scout", "vanguard", "medic", "engineer"];
+const bossIds = ["overlord", "stalker", "magician"];
 
 function characterFor(value) {
   return characterIds.includes(value) ? value : "scout";
@@ -20,6 +21,11 @@ const mime = {
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
 };
 
 function sendFile(res, urlPath) {
@@ -53,6 +59,7 @@ function makeCode() {
 function roomCapacity(mode) {
   if (mode === "team") return 6;
   if (mode === "chaos") return 5;
+  if (mode === "boss") return 5;
   return 2;
 }
 
@@ -62,6 +69,7 @@ function publicRoom(room) {
     mode: room.mode,
     maxPlayers: room.maxPlayers,
     started: room.started,
+    selectingCharacters: Boolean(room.selectingCharacters),
     players: room.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -69,6 +77,7 @@ function publicRoom(room) {
       team: player.team,
       bot: Boolean(player.bot),
       character: player.character || "scout",
+      boss: Boolean(player.boss),
       connected: !player.bot && !player.socket.destroyed,
     })),
   };
@@ -150,14 +159,17 @@ function nextTeam(room) {
 
 function addPlayer(room, socket, role, bot = false, character = "scout") {
   const index = room.players.length + 1;
+  const wantsBoss = false;
   const player = {
     id: bot ? `bot-${Date.now()}-${index}` : crypto.randomUUID(),
     socket,
     role,
     bot,
-    character: bot ? characterIds[(index - 1) % characterIds.length] : characterFor(character),
+    boss: wantsBoss,
+    character: characterFor(character),
+    characterSelected: false,
     name: bot ? `人机 ${index}` : role === "host" ? "房主" : `玩家 ${index}`,
-    team: nextTeam(room),
+    team: room.mode === "boss" ? (wantsBoss ? "B" : "A") : nextTeam(room),
   };
   room.players.push(player);
   if (!bot) clients.set(socket, { code: room.code, role, playerId: player.id });
@@ -191,9 +203,9 @@ function removeClient(socket) {
 
 function handleMessage(socket, message) {
   if (message.type === "createRoom") {
-    const mode = ["duel", "team", "chaos"].includes(message.mode) ? message.mode : "duel";
+    const mode = ["duel", "team", "chaos", "boss"].includes(message.mode) ? message.mode : "duel";
     const code = makeCode();
-    const room = { code, mode, maxPlayers: roomCapacity(mode), players: [], started: false };
+    const room = { code, mode, maxPlayers: roomCapacity(mode), players: [], started: false, selectingCharacters: false };
     rooms.set(code, room);
     addPlayer(room, socket, "host", false, message.character);
     sendJson(socket, { type: "roomCreated", code, mode, playerId: clients.get(socket).playerId, room: publicRoom(room) });
@@ -206,6 +218,10 @@ function handleMessage(socket, message) {
     const room = rooms.get(code);
     if (!room) {
       sendJson(socket, { type: "error", message: "房间不存在" });
+      return;
+    }
+    if (message.mode && message.mode !== room.mode) {
+      sendJson(socket, { type: "error", message: "房间模式不匹配，请从相同模式加入" });
       return;
     }
     if (room.started) {
@@ -249,18 +265,70 @@ function handleMessage(socket, message) {
   if (message.type === "setCharacter") {
     const room = clientRoom(socket);
     const info = clients.get(socket);
-    if (!room || !info || room.started) return;
+    if (!room || !info || room.started || !room.selectingCharacters) return;
     const player = room.players.find((entry) => entry.id === info.playerId);
     if (!player) return;
-    player.character = characterFor(message.character);
+    player.character = room.mode === "boss" && player.boss ? (bossIds.includes(message.character) ? message.character : "overlord") : characterFor(message.character);
+    player.characterSelected = true;
+    broadcastLobby(room);
+    if (room.players.every((entry) => entry.bot || entry.characterSelected)) broadcastRoom(room, { type: "roomCharactersReady", room: publicRoom(room) });
+    return;
+  }
+
+  if (message.type === "assignPlayer") {
+    const room = clientRoom(socket);
+    const info = clients.get(socket);
+    if (!room || !info || info.role !== "host" || room.started) return;
+    const player = room.players.find((entry) => entry.id === message.playerId);
+    if (!player) return;
+    if (room.mode === "boss") {
+      const isBoss = message.assignment === "boss";
+      if (isBoss && room.players.some((entry) => entry.id !== player.id && entry.boss)) {
+        sendJson(socket, { type: "error", message: "本房间已经有一名 BOSS" });
+        return;
+      }
+      player.boss = isBoss;
+      player.team = isBoss ? "B" : "A";
+      player.character = isBoss ? (bossIds.includes(player.character) ? player.character : "overlord") : characterFor(player.character);
+    } else if (room.mode === "team" && ["A", "B"].includes(message.assignment)) {
+      player.team = message.assignment;
+    } else {
+      return;
+    }
     broadcastLobby(room);
     return;
   }
 
+  if (message.type === "returnToLobby") {
+    const room = clientRoom(socket);
+    if (!room || !room.started) return;
+    room.started = false;
+    room.battle = null;
+    broadcastRoom(room, { type: "roomReturnedToLobby", room: publicRoom(room) });
+    return;
+  }
   if (message.type === "startRoom") {
     const room = clientRoom(socket);
     const info = clients.get(socket);
     if (!room || info.role !== "host") return;
+    if (!room.selectingCharacters) {
+      if (room.mode === "boss") {
+        const bossCount = room.players.filter((player) => player.boss).length;
+        if (bossCount !== 1 || room.players.length < 2) {
+          sendJson(socket, { type: "error", message: "BOSS 战需要恰好 1 名 BOSS 和至少 1 名生存者" });
+          return;
+        }
+      }
+      room.selectingCharacters = true;
+      room.players.forEach((player, index) => { player.characterSelected = Boolean(player.bot); player.character = player.bot ? (player.boss ? bossIds[index % bossIds.length] : characterIds[index % characterIds.length]) : null; });
+      broadcastRoom(room, { type: "roomCharacterSelection", room: publicRoom(room) });
+      return;
+    }
+    if (!room.players.every((player) => player.bot || player.characterSelected)) {
+      sendJson(socket, { type: "error", message: "请等待所有玩家确认角色" });
+      return;
+    }
+    room.selectingCharacters = false;
     room.started = true;
     room.battle = message.battle || null;
     broadcastRoom(room, { type: "roomStarted", room: publicRoom(room), battle: room.battle });
