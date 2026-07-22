@@ -181,6 +181,18 @@
       </section>
 
       <section class="room-skill-dialog hidden" id="roomSkillDialog" aria-live="polite"></section>
+      <nav class="mobile-battle-dock hidden" id="mobileBattleDock" aria-label="移动端战斗操作">
+        <button type="button" data-mobile-panel="status"><span>▣</span>状态</button>
+        <button type="button" data-mobile-panel="map"><span>◇</span>地图</button>
+        <button type="button" data-mobile-panel="actions"><span>✦</span>行动</button>
+        <button type="button" data-mobile-panel="skills"><span>技</span>技能</button>
+      </nav>
+      <section class="mobile-battle-panel hidden" id="mobileBattlePanel" role="dialog" aria-modal="true" aria-labelledby="mobileBattlePanelTitle">
+        <div class="mobile-battle-panel-card">
+          <header><h2 id="mobileBattlePanelTitle">战斗操作</h2><button class="ghost-button" type="button" id="mobileBattlePanelClose">关闭</button></header>
+          <div class="mobile-battle-panel-body" id="mobileBattlePanelBody"></div>
+        </div>
+      </section>
       <section class="battle-log-dialog hidden" id="battleLogDialog" role="dialog" aria-modal="true" aria-labelledby="battleLogDialogTitle">
         <div class="battle-log-dialog-card">
           <header>
